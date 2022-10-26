@@ -109,8 +109,9 @@ all_AS_events_bed_TPM_q05 <- produce_invervals_TPM_threshold(0.05)
 
 quantile(all_AS_events_bed_TPM_q05$Inclvl1_r1, seq(0, 1, 0.05))  
 
-all_AS_events_bed_TPM_q05_control_raw <- all_AS_events_bed_TPM_q05 %>%
-  filter(FDR > 0.05) %>%
+#add PI to all AS event before assigning sig and no-sig AS
+all_AS_events_bed_TPM_q05_raw <- all_AS_events_bed_TPM_q05 %>%
+  #filter(FDR > 0.05) %>%
   #PI means percentage of Inclusion (H: PI > 0.8, MH: 0.6 < PI <= 0.8, M: 0.4 < PI <= 0.6, ML: 0.2 < PI <= 0.4, L PI <= 0.2)
   mutate(PI = if_else(Inclvl1_r1 > 0.8 & Inclvl1_r2 > 0.8 & Inclvl2_r1 > 0.8 & Inclvl2_r2 > 0.8, "PI_H",
                       if_else(Inclvl1_r1 <= 0.2 & Inclvl1_r2 <= 0.2 & Inclvl2_r1 <= 0.2 & Inclvl2_r2 <= 0.2, "PI_L",
@@ -122,21 +123,49 @@ all_AS_events_bed_TPM_q05_control_raw <- all_AS_events_bed_TPM_q05 %>%
                                                         Inclvl2_r1 > 0.2 & Inclvl2_r1 <= 0.4 & Inclvl2_r2 > 0.2 & Inclvl2_r2 <= 0.4, "PI_ML", "others")))))) %>%
   filter(PI != "others")
 
-all_AS_events_bed_TPM_q05 %>%
+all_AS_events_bed_TPM_q05_raw %>%
   filter(FDR < 0.05) %>%
-  group_by(AS_type, comp, chr) %>%
+  group_by(AS_type, comp, PI) %>%
   summarise(count = n()) %>%
   View()
+?geom_histogram
 
-all_AS_events_bed_TPM_q05_control_raw %>%
-  group_by(comp, AS_type, chr) %>%
+
+#create the plot of non-sig and sig ASs for the number of their counts
+#AS
+all_AS_events_bed_TPM_q05_control_count_p <- all_AS_events_bed_TPM_q05_raw %>%
+  filter(FDR > 0.05) %>%
+  group_by(comp, AS_type, PI) %>%
   summarise(count = n()) %>%
-  View()
+  ggplot() + 
+  geom_bar(aes(x = PI, y = count), stat = 'identity') +
+  facet_grid(comp ~ AS_type) +
+  scale_y_continuous(breaks=seq(0, 25000, 5000))+
+  theme(strip.text.x = element_text(colour = "black", face = "bold", size = 18), legend.text = element_text(size = 12, face = "bold"),
+        legend.title = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank(), 
+        axis.text.y = element_text(size = 18, face = "bold"), strip.text.y = element_text(colour = "black", face = "bold", size = 18), axis.text.x = element_text(size = 16, face = "bold"))
 
-                                  
+ggsave("./analysis_output/all_AS_events_bed_TPM_q05_control_count_p.jpeg", all_AS_events_bed_TPM_q05_control_count_p, width = 500, height = 400, units = c("mm"), dpi = 320)
+
+
+#DAS                                  
+all_DAS_events_bed_TPM_q05_count_p <- all_AS_events_bed_TPM_q05_raw %>%
+  filter(FDR < 0.05) %>%
+  group_by(comp, AS_type, PI) %>%
+  summarise(count = n()) %>%
+  ggplot() + 
+  geom_bar(aes(x = PI, y = count), stat = 'identity') +
+  facet_grid(comp ~ AS_type) +
+  theme(strip.text.x = element_text(colour = "black", face = "bold", size = 18), legend.text = element_text(size = 12, face = "bold"),
+        legend.title = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank(), 
+        axis.text.y = element_text(size = 18, face = "bold"), strip.text.y = element_text(colour = "black", face = "bold", size = 18), axis.text.x = element_text(size = 16, face = "bold"))
+
+ggsave("./analysis_output/all_DAS_events_bed_TPM_q05_count_p.jpeg", all_DAS_events_bed_TPM_q05_count_p, width = 500, height = 400, units = c("mm"), dpi = 320)
+
 
 #generate the the list of control set using 5 categories of PI (percentage of Inclusion)
-all_AS_events_bed_TPM_q05_control_l <- all_AS_events_bed_TPM_q05_control_raw %>%
+all_AS_events_bed_TPM_q05_control_l <- all_AS_events_bed_TPM_q05_raw %>%
+  filter(FDR > 0.05) %>%
   #group_by(comp, AS_type, PI) %>%
   select(chr, str, end, comp, AS_type, PI) %>%
   mutate(comp = str_replace(comp, ".vs.", "_")) %>%
