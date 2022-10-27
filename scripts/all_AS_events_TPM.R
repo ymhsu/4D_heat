@@ -2,9 +2,13 @@
 #gene size, which exon or intron tends to have larger frequency to have AS,
 #The following analysis is for identifying these factors,
 #And it would be helpful for selecting the control dataset for ploting the signal of histone marks
+#Since there are two kinds of annotation data in our lab, 
+#I first used SollycM82_genes_v1.1.0.gff3 (without any modification of non-coding RNA) to extract exons and introns
+#Then, I focus on the other one "Sl_M82_20220504_all.gff3" with the modification of non-coding RNA by Jeremie
 
 library(tidyverse)
 
+#M82 without modifying non-coding RNA
 M82_all_exon <- read_delim("./data/M82_annotation_data/SollycM82_genes_v1.1.0_12Chr_exon.bed", 
                            delim = "\t", col_names = c("chr", "str", "end", "info", "strand"))
 M82_all_intron <- read_delim("./data/M82_annotation_data/SollycM82_genes_v1.1.0_12Chr_intron.bed", 
@@ -32,17 +36,34 @@ M82_all_exon %>%
   filter(exon_label_m == exon_label_a) %>%
   filter(strand == "-") 
 
-#calculate TPM of these events
-all_AS_events_bed_raw %>%
-  View()
+#M82 with modifying non-coding RNA
+#import data
+all_AS_events <- read_delim("./data/rMATS_out/All_events_all_comparisons.tsv", delim = "\t") %>%
+  mutate(ID_modified = str_remove(ID, GeneID))
 
-all_AS_events_bed_raw_v1 %>%
-  View()
+#split ID_modified to get 6 position of the necessary information for alternative splicing
+AS_coordinate_all <- str_split(all_AS_events$ID_modified, "_", simplify = TRUE)
 
-all_AS_events_bed_raw_v1 %>%
-  group_by(comp) %>%
-  summarise()
+#for all AS
+all_AS_events_bed_raw_v1 <- tibble(
+  chr = all_AS_events$chr,
+  GeneID = all_AS_events$GeneID,
+  strand = all_AS_events$strand,
+  pos_1 = as.double(AS_coordinate_all[,2]),
+  pos_2 = as.double(AS_coordinate_all[,3]),
+  pos_3 = as.double(AS_coordinate_all[,4]),
+  pos_4 = as.double(AS_coordinate_all[,5]),
+  pos_5 = as.double(AS_coordinate_all[,6]),
+  pos_6 = as.double(AS_coordinate_all[,7]),
+  AS_type = all_AS_events$AS_type,
+  comp = all_AS_events$comp,
+  FDR = all_AS_events$FDR,
+  IncLevel1 = all_AS_events$IncLevel1,
+  IncLevel2 = all_AS_events$IncLevel2,
+  Incdf = all_AS_events$IncLevelDifference
+) 
 
+#calculate TPM for all of these events
 Inc_all_sample_1 <- str_split(all_AS_events$IJC_SAMPLE_1, ",", simplify = TRUE)
 Sk_all_sample_1 <- str_split(all_AS_events$SJC_SAMPLE_1, ",", simplify = TRUE)
 Inc_all_sample_2 <- str_split(all_AS_events$IJC_SAMPLE_2, ",", simplify = TRUE)
@@ -123,12 +144,15 @@ all_AS_events_bed_TPM_q05_raw <- all_AS_events_bed_TPM_q05 %>%
                                                         Inclvl2_r1 > 0.2 & Inclvl2_r1 <= 0.4 & Inclvl2_r2 > 0.2 & Inclvl2_r2 <= 0.4, "PI_ML", "others")))))) %>%
   filter(PI != "others")
 
-all_AS_events_bed_TPM_q05_raw %>%
+all_DAS_events_bed_TPM_q05_raw <- all_AS_events_bed_TPM_q05 %>%
   filter(FDR < 0.05) %>%
-  group_by(AS_type, comp, PI) %>%
-  summarise(count = n()) %>%
-  View()
-?geom_histogram
+  filter(FDR < 0.05) %>%
+  mutate(PI = if_else(Inclvl1_r1 > 0.8 & Inclvl1_r2 > 0.8, "PI_H",
+                      if_else(Inclvl1_r1 <= 0.2 & Inclvl1_r2 <= 0.2, "PI_L",
+                              if_else(Inclvl1_r1 > 0.6 & Inclvl1_r1 <= 0.8 & Inclvl1_r2 > 0.6 & Inclvl1_r2 <= 0.8, "PI_MH",
+                                      if_else(Inclvl1_r1 > 0.4 & Inclvl1_r1 <= 0.6 & Inclvl1_r2 > 0.4 & Inclvl1_r2 <= 0.6, "PI_M",
+                                              if_else(Inclvl1_r1 > 0.2 & Inclvl1_r1 <= 0.4 & Inclvl1_r2 > 0.2 & Inclvl1_r2 <= 0.4, "PI_ML", "others")))))) %>%
+  filter(PI != "others") 
 
 
 #create the plot of non-sig and sig ASs for the number of their counts
@@ -137,8 +161,13 @@ all_AS_events_bed_TPM_q05_control_count_p <- all_AS_events_bed_TPM_q05_raw %>%
   filter(FDR > 0.05) %>%
   group_by(comp, AS_type, PI) %>%
   summarise(count = n()) %>%
+  group_by(comp, AS_type) %>%
+  mutate(count_comp_AS = sum(count)) %>%
+  mutate(sd = sqrt(count)) %>%
   ggplot() + 
   geom_bar(aes(x = PI, y = count), stat = 'identity') +
+  geom_errorbar(aes(ymin=count-sd, ymax=count+sd, x = PI), width=.1, position = position_dodge(width = 0.9)) +
+  #coord_cartesian(ylim = c(21000, 23000)) +
   facet_grid(comp ~ AS_type) +
   scale_y_continuous(breaks=seq(0, 25000, 5000))+
   theme(strip.text.x = element_text(colour = "black", face = "bold", size = 18), legend.text = element_text(size = 12, face = "bold"),
@@ -149,12 +178,16 @@ ggsave("./analysis_output/all_AS_events_bed_TPM_q05_control_count_p.jpeg", all_A
 
 
 #DAS                                  
-all_DAS_events_bed_TPM_q05_count_p <- all_AS_events_bed_TPM_q05_raw %>%
+all_DAS_events_bed_TPM_q05_count_p <- all_DAS_events_bed_TPM_q05_raw %>%
   filter(FDR < 0.05) %>%
   group_by(comp, AS_type, PI) %>%
   summarise(count = n()) %>%
+  group_by(comp, AS_type) %>%
+  mutate(count_comp_AS = sum(count)) %>%
+  mutate(sd = sqrt(count)) %>%
   ggplot() + 
   geom_bar(aes(x = PI, y = count), stat = 'identity') +
+  geom_errorbar(aes(ymin=count-sd, ymax=count+sd, x = PI), width=.1, position = position_dodge(width = 0.9)) +
   facet_grid(comp ~ AS_type) +
   theme(strip.text.x = element_text(colour = "black", face = "bold", size = 18), legend.text = element_text(size = 12, face = "bold"),
         legend.title = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank(), 
@@ -168,6 +201,7 @@ all_AS_events_bed_TPM_q05_control_l <- all_AS_events_bed_TPM_q05_raw %>%
   filter(FDR > 0.05) %>%
   #group_by(comp, AS_type, PI) %>%
   select(chr, str, end, comp, AS_type, PI) %>%
+  arrange(chr, str, end) %>%
   mutate(comp = str_replace(comp, ".vs.", "_")) %>%
   split(.$comp) %>%
   map(. %>% split(.$AS_type)) %>%
@@ -212,16 +246,10 @@ str_c("data/AS_control_set/AS_control_TPM_q05_", names(all_AS_events_bed_TPM_q05
 #generate the list of sig event using FDR below 0.05 
 #PI added
 all_AS_events_bed_TPM_q05_FDR05_l <- 
-  all_AS_events_bed_TPM_q05 %>%
-  filter(FDR < 0.05) %>%
-  mutate(PI = if_else(Inclvl1_r1 > 0.8 & Inclvl1_r2 > 0.8, "PI_H",
-                      if_else(Inclvl1_r1 <= 0.2 & Inclvl1_r2 <= 0.2, "PI_L",
-                              if_else(Inclvl1_r1 > 0.6 & Inclvl1_r1 <= 0.8 & Inclvl1_r2 > 0.6 & Inclvl1_r2 <= 0.8, "PI_MH",
-                                      if_else(Inclvl1_r1 > 0.4 & Inclvl1_r1 <= 0.6 & Inclvl1_r2 > 0.4 & Inclvl1_r2 <= 0.6, "PI_M",
-                                              if_else(Inclvl1_r1 > 0.2 & Inclvl1_r1 <= 0.4 & Inclvl1_r2 > 0.2 & Inclvl1_r2 <= 0.4, "PI_ML", "others")))))) %>%
-  filter(PI != "others") %>%
+  all_DAS_events_bed_TPM_q05_raw %>%
   select(chr, str, end, comp, AS_type, PI) %>%
   mutate(comp = str_replace(comp, ".vs.", "_")) %>%
+  arrange(chr, str, end) %>%
   group_by(comp, AS_type, PI) %>%
   split(.$comp) %>%
   map(. %>% split(.$AS_type)) %>%
@@ -263,7 +291,22 @@ for (i in seq_along(all_AS_events_bed_TPM_q05_FDR05_l_noPI)) {
   }
 }
 
+#modify bed files of annotation data (Jeremie) to add order number of exon or intron
+M82_rMATs_anno_all_exon <- read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_exon.bed", delim = "\t", col_names = c("chr", "str", "end", "strand", "feature", "source", "gene_name"))
+M82_rMATs_anno_all_intron <- read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_intron.bed", delim = "\t", col_names = c("chr", "str", "end", "strand", "feature", "source", "gene_name"))
 
+
+M82_rMATs_anno_all_feature <- bind_rows(M82_rMATs_anno_all_intron, M82_rMATs_anno_all_exon) %>%
+  arrange(chr, str, end) %>%
+  group_by(gene_name, feature) %>%
+  mutate(order_n = if_else(strand == "+", c(1:n()), c(n():1))) %>%
+  split(.$feature)
+
+write_delim(M82_rMATs_anno_all_feature[[1]], "./data/M82_annotation_data/M82_rMATs_anno_all_exon_order.bed", col_names = FALSE, delim = "\t")
+write_delim(M82_rMATs_anno_all_feature[[2]], "./data/M82_annotation_data/M82_rMATs_anno_all_intron_order.bed", col_names = FALSE, delim = "\t")
+
+
+###check RNA levels of different events######
 #check TPM between ctrl and sig set (no PI)
 AS_NS_TPM_q05_ctrl_check_l <- all_AS_events_bed_TPM_q05_control_raw %>%
   #group_by(comp, AS_type) %>%

@@ -52,19 +52,22 @@ M82_rMATs_anno_all %>%
   distinct()
 
 #produce the bed file of gene using the annotation data of Jeremie
-M82_rMATs_anno_all_exon_bed <- M82_rMATs_anno_all %>%
+M82_rMATs_anno_all_exon_bed_l <- M82_rMATs_anno_all %>%
   mutate(loc_M82_rMATs_anno_end = loc_M82_rMATs_anno_end[, 1]) %>%
   mutate(anno = str_sub(anno, 1, loc_M82_rMATs_anno_end-1)) %>%
   mutate(anno = str_remove(anno, "transcript_id.*:")) %>%
+  mutate(anno = str_remove(anno, "transcript_id=")) %>%
   select(-loc_M82_rMATs_anno_end) %>%
   filter(feature == "exon") %>%
   filter(str_detect(chr, "chr")==TRUE) %>%
   mutate(chr_number = as.double(str_sub(chr, 4, 5)), str = str - 1) %>%
   filter(chr_number>=1 & chr_number <= 12) %>%
   arrange(chr_number, str, end) %>%
-  select(-chr_number)
+  select(-chr_number) %>%
+  split(.$source)
 
-M82_rMATs_anno_all_gene_bed <- M82_rMATs_anno_all_exon_bed %>%
+M82_rMATs_anno_all_gene_bed_l <- M82_rMATs_anno_all_exon_bed_l %>%
+  bind_rows() %>%
   mutate(chr_number = as.double(str_sub(chr, 4, 5))) %>%
   group_by(source, anno, chr, chr_number, strand) %>%
   summarise(str = min(str), end = max(end)) %>%
@@ -72,8 +75,13 @@ M82_rMATs_anno_all_gene_bed <- M82_rMATs_anno_all_exon_bed %>%
   select(chr, str, end, strand, feature, source, anno, chr_number) %>%
   ungroup() %>%
   arrange(chr_number, str, end) %>%
-  select(-chr_number)
+  select(-chr_number) %>%
+  split(.$source)
 
-write_delim(M82_rMATs_anno_all_gene_bed, "./data/M82_annotation_data/M82_rMATs_anno_all_gene.bed", col_names = FALSE, delim = "\t")
-write_delim(M82_rMATs_anno_all_exon_bed, "./data/M82_annotation_data/M82_rMATs_anno_all_exon.bed", col_names = FALSE, delim = "\t")
-  
+M82_rMATs_anno_all_gene_bed_l[[1]]
+
+write_delim(M82_rMATs_anno_all_gene_bed_l[[1]], "./data/M82_annotation_data/M82_rMATs_anno_all_gene_liftoff.bed", col_names = FALSE, delim = "\t")
+write_delim(M82_rMATs_anno_all_gene_bed_l[[2]], "./data/M82_annotation_data/M82_rMATs_anno_all_gene_regarn.bed", col_names = FALSE, delim = "\t")
+
+write_delim(M82_rMATs_anno_all_exon_bed_l[[1]], "./data/M82_annotation_data/M82_rMATs_anno_all_exon_liftoff.bed", col_names = FALSE, delim = "\t")
+write_delim(M82_rMATs_anno_all_exon_bed_l[[2]], "./data/M82_annotation_data/M82_rMATs_anno_all_exon_regarn.bed", col_names = FALSE, delim = "\t")
