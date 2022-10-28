@@ -17,8 +17,8 @@ M82_rMATs_anno_all_gene %>%
   filter(size < 13000) %>%
   ggplot() +
   #geom_histogram(aes(size), bins = 50) +
-  geom_histogram(aes(size), bins = 100) +
-  scale_x_continuous(breaks = seq(0, max(M82_rMATs_anno_all_gene$size), 2000))
+  geom_histogram(aes(size/1000), bins = 100) +
+  scale_x_continuous(breaks = seq(0, max(M82_rMATs_anno_all_gene$size)/1000, 2))
 
 max(M82_rMATs_anno_all_gene$size)
 
