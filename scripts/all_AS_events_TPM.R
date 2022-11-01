@@ -72,6 +72,8 @@ IncLevel_all_sample1_l <- str_split(all_AS_events_bed_raw_v1$IncLevel1, ",", sim
 IncLevel_all_sample2_l <- str_split(all_AS_events_bed_raw_v1$IncLevel2, ",", simplify = TRUE)
 
 
+#Since three comparisons are HS1.vs.HS0, HS1.vs.HS6 and HS6.vs.HS0,
+#I changed inversely the order of HS1 and HS6 for TPM and PSI calculations
 
 all_AS_events_bed_TPM_raw <- all_AS_events_bed_raw_v1 %>%
   mutate(str = if_else(AS_type == "A5S" & strand == "+", pos_4, 
@@ -85,17 +87,23 @@ all_AS_events_bed_TPM_raw <- all_AS_events_bed_raw_v1 %>%
                                        if_else(AS_type == "A3S" & strand == "-", pos_2, 
                                                if_else(AS_type == "SE", pos_2, pos_5)))))) %>%
   select(chr, str, end, GeneID, strand, AS_type, comp, FDR, IncLevel1, IncLevel2, Incdf, GeneID, pos_1, pos_2, pos_3, pos_4, pos_5, pos_6) %>%
-  mutate(Inc_S1_r1 = as.double(Inc_all_sample_1[,1]), Inc_S1_r2 = as.double(Inc_all_sample_1[,2]),
-         Sk_S1_r1 = as.double(Sk_all_sample_1[,1]), Sk_S1_r2 = as.double(Sk_all_sample_1[,2]),
-         Inc_S2_r1 = as.double(Inc_all_sample_2[,1]), Inc_S2_r2 = as.double(Inc_all_sample_2[,2]),
-         Sk_S2_r1 = as.double(Sk_all_sample_2[,1]), Sk_S2_r2 = as.double(Sk_all_sample_2[,2])) %>%
+  mutate(Inc_S1_r1 = if_else(comp == "HS1.vs.HS6", as.double(Inc_all_sample_2[,1]), as.double(Inc_all_sample_1[,1])), 
+         Inc_S1_r2 = if_else(comp == "HS1.vs.HS6", as.double(Inc_all_sample_2[,2]), as.double(Inc_all_sample_1[,2])),
+         Sk_S1_r1 = if_else(comp == "HS1.vs.HS6", as.double(Sk_all_sample_2[,1]), as.double(Sk_all_sample_1[,1])), 
+         Sk_S1_r2 = if_else(comp == "HS1.vs.HS6", as.double(Sk_all_sample_2[,2]), as.double(Sk_all_sample_1[,2])),
+         Inc_S2_r1 = if_else(comp == "HS1.vs.HS6", as.double(Inc_all_sample_1[,1]), as.double(Inc_all_sample_2[,1])), 
+         Inc_S2_r2 = if_else(comp == "HS1.vs.HS6", as.double(Inc_all_sample_1[,2]), as.double(Inc_all_sample_2[,2])),
+         Sk_S2_r1 = if_else(comp == "HS1.vs.HS6", as.double(Sk_all_sample_1[,1]), as.double(Sk_all_sample_2[,1])), 
+         Sk_S2_r2 = if_else(comp == "HS1.vs.HS6", as.double(Sk_all_sample_1[,2]), as.double(Sk_all_sample_2[,2]))) %>%
   mutate(S1 = str_sub(comp, 1, 3), S2 = str_sub(comp, 8, 10)) %>%
   mutate(Inc_length = if_else(AS_type == "RI", pos_2 - pos_1,
                               if_else(AS_type == "SE", pos_6 - pos_5 + pos_4 - pos_3 + pos_2 - pos_1, pos_6 - pos_5 + pos_2 - pos_1))) %>%
   mutate(Sk_length = pos_6 - pos_5 + pos_4 - pos_3) %>%
   mutate(Inc_length = Inc_length/10^3, Sk_length = Sk_length/10^3) %>%
-  mutate(Inclvl1_r1 = as.double(IncLevel_all_sample1_l[,1]), Inclvl1_r2 = as.double(IncLevel_all_sample1_l[,2]),
-         Inclvl2_r1 = as.double(IncLevel_all_sample2_l[,1]), Inclvl2_r2 = as.double(IncLevel_all_sample2_l[,2])) %>%
+  mutate(Inclvl1_r1 = if_else(comp == "HS1.vs.HS6", as.double(IncLevel_all_sample2_l[,1]), as.double(IncLevel_all_sample1_l[,1])), 
+         Inclvl1_r2 = if_else(comp == "HS1.vs.HS6", as.double(IncLevel_all_sample2_l[,2]), as.double(IncLevel_all_sample1_l[,2])),
+         Inclvl2_r1 = if_else(comp == "HS1.vs.HS6", as.double(IncLevel_all_sample1_l[,1]), as.double(IncLevel_all_sample2_l[,1])), 
+         Inclvl2_r2 = if_else(comp == "HS1.vs.HS6", as.double(IncLevel_all_sample1_l[,2]), as.double(IncLevel_all_sample2_l[,2]))) %>%
   replace_na(list(Inclvl1_r1 = 10^5, Inclvl1_r2 = 10^5, Inclvl2_r1 = 10^5, Inclvl2_r2 = 10^5)) %>%
   group_by(comp) %>%
   mutate(count_S1_r1 = sum(Inc_S1_r1/Inc_length + Sk_S1_r1/Sk_length)/10^6,
@@ -145,7 +153,6 @@ all_AS_events_bed_TPM_q05_raw <- all_AS_events_bed_TPM_q05 %>%
   filter(PI != "others")
 
 all_DAS_events_bed_TPM_q05_raw <- all_AS_events_bed_TPM_q05 %>%
-  filter(FDR < 0.05) %>%
   filter(FDR < 0.05) %>%
   mutate(PI = if_else(Inclvl1_r1 > 0.8 & Inclvl1_r2 > 0.8, "PI_H",
                       if_else(Inclvl1_r1 <= 0.2 & Inclvl1_r2 <= 0.2, "PI_L",
