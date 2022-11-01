@@ -73,7 +73,9 @@ IncLevel_all_sample2_l <- str_split(all_AS_events_bed_raw_v1$IncLevel2, ",", sim
 
 
 #Since three comparisons are HS1.vs.HS0, HS1.vs.HS6 and HS6.vs.HS0,
-#I changed inversely the order of HS1 and HS6 for TPM and PSI calculations
+#Incdf is always the difference using the average IncLevel1 subtracting the average IncLevel2.
+#I changed inversely the order of HS1 and HS6 for TPM and PSI calculations, and also changed the Incdf of HS1.vs.HS6 into HS6 subtracting HS1 (named as Incdf_m)
+#like Inc_S1_r1 is the read number of HS6
 
 all_AS_events_bed_TPM_raw <- all_AS_events_bed_raw_v1 %>%
   mutate(str = if_else(AS_type == "A5S" & strand == "+", pos_4, 
@@ -94,7 +96,8 @@ all_AS_events_bed_TPM_raw <- all_AS_events_bed_raw_v1 %>%
          Inc_S2_r1 = if_else(comp == "HS1.vs.HS6", as.double(Inc_all_sample_1[,1]), as.double(Inc_all_sample_2[,1])), 
          Inc_S2_r2 = if_else(comp == "HS1.vs.HS6", as.double(Inc_all_sample_1[,2]), as.double(Inc_all_sample_2[,2])),
          Sk_S2_r1 = if_else(comp == "HS1.vs.HS6", as.double(Sk_all_sample_1[,1]), as.double(Sk_all_sample_2[,1])), 
-         Sk_S2_r2 = if_else(comp == "HS1.vs.HS6", as.double(Sk_all_sample_1[,2]), as.double(Sk_all_sample_2[,2]))) %>%
+         Sk_S2_r2 = if_else(comp == "HS1.vs.HS6", as.double(Sk_all_sample_1[,2]), as.double(Sk_all_sample_2[,2])),
+         Incdf_m = if_else(comp == "HS1.vs.HS6", -Incdf, Incdf)) %>%
   mutate(S1 = str_sub(comp, 1, 3), S2 = str_sub(comp, 8, 10)) %>%
   mutate(Inc_length = if_else(AS_type == "RI", pos_2 - pos_1,
                               if_else(AS_type == "SE", pos_6 - pos_5 + pos_4 - pos_3 + pos_2 - pos_1, pos_6 - pos_5 + pos_2 - pos_1))) %>%
@@ -297,20 +300,6 @@ for (i in seq_along(all_AS_events_bed_TPM_q05_FDR05_l_noPI)) {
     
   }
 }
-
-#modify bed files of annotation data (Jeremie) to add order number of exon or intron
-M82_rMATs_anno_all_exon <- read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_exon.bed", delim = "\t", col_names = c("chr", "str", "end", "strand", "feature", "source", "gene_name"))
-M82_rMATs_anno_all_intron <- read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_intron.bed", delim = "\t", col_names = c("chr", "str", "end", "strand", "feature", "source", "gene_name"))
-
-
-M82_rMATs_anno_all_feature <- bind_rows(M82_rMATs_anno_all_intron, M82_rMATs_anno_all_exon) %>%
-  arrange(chr, str, end) %>%
-  group_by(gene_name, feature) %>%
-  mutate(order_n = if_else(strand == "+", c(1:n()), c(n():1))) %>%
-  split(.$feature)
-
-write_delim(M82_rMATs_anno_all_feature[[1]], "./data/M82_annotation_data/M82_rMATs_anno_all_exon_order.bed", col_names = FALSE, delim = "\t")
-write_delim(M82_rMATs_anno_all_feature[[2]], "./data/M82_annotation_data/M82_rMATs_anno_all_intron_order.bed", col_names = FALSE, delim = "\t")
 
 
 ###check RNA levels of different events######

@@ -85,3 +85,20 @@ write_delim(M82_rMATs_anno_all_gene_bed_l[[2]], "./data/M82_annotation_data/M82_
 
 write_delim(M82_rMATs_anno_all_exon_bed_l[[1]], "./data/M82_annotation_data/M82_rMATs_anno_all_exon_liftoff.bed", col_names = FALSE, delim = "\t")
 write_delim(M82_rMATs_anno_all_exon_bed_l[[2]], "./data/M82_annotation_data/M82_rMATs_anno_all_exon_regarn.bed", col_names = FALSE, delim = "\t")
+
+#the bed files of gene and exon from liftoff and regarn were separatedly used for procuding two intron bed files,
+#Then, these exon and intron files are added labels for the following analysis
+
+#modify bed files of annotation data (Jeremie) to add order number of exon or intron
+M82_rMATs_anno_all_exon <- read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_exon.bed", delim = "\t", col_names = c("chr", "str", "end", "strand", "feature", "source", "gene_name"))
+M82_rMATs_anno_all_intron <- read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_intron.bed", delim = "\t", col_names = c("chr", "str", "end", "strand", "feature", "source", "gene_name"))
+
+
+M82_rMATs_anno_all_feature <- bind_rows(M82_rMATs_anno_all_intron, M82_rMATs_anno_all_exon) %>%
+  arrange(chr, str, end) %>%
+  group_by(gene_name, feature) %>%
+  mutate(order_n = if_else(strand == "+", c(1:n()), c(n():1))) %>%
+  split(.$feature)
+
+write_delim(M82_rMATs_anno_all_feature[[1]], "./data/M82_annotation_data/M82_rMATs_anno_all_exon_order.bed", col_names = FALSE, delim = "\t")
+write_delim(M82_rMATs_anno_all_feature[[2]], "./data/M82_annotation_data/M82_rMATs_anno_all_intron_order.bed", col_names = FALSE, delim = "\t")
