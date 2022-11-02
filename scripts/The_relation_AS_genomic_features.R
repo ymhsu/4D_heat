@@ -119,26 +119,153 @@ gene_having_AS <- all_AS_intersected_feature_raw %>%
 M82_rMATs_anno_all_exon_order <- read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_exon_order.bed", col_names = c("chr", "str", "end", "strand", "feature", "source", "anno", "order"))
 M82_rMATs_anno_all_intron_order <- read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_intron_order.bed", col_names = c("chr", "str", "end", "strand", "feature", "source", "anno", "order"))
 
+
 gene_having_AS_exon_info <- M82_rMATs_anno_all_exon_order %>%
   arrange(chr, str) %>%
   left_join(gene_having_AS) %>%
   drop_na() %>%
-  select(-event)
+  select(-event) %>%
+  distinct()
 
 gene_having_AS_intron_info <- M82_rMATs_anno_all_intron_order %>%
   arrange(chr, str) %>%
   left_join(gene_having_AS) %>%
   drop_na() %>%
-  select(-event)
-  
+  select(-event) %>%
+  distinct()
+
+#SE 
 gene_having_AS_exon_info %>%
-  left_join(all_AS_intersected_feature_raw, by = c("feature", "anno", "order")) %>%
-  View()
-  #drop_na() %>%
-  group_by(comp, PI, event) %>%
+  group_by(anno) %>%
   summarise(count = n()) %>%
+  group_by(count) %>%
+  summarise(count_sum = sum(count)) %>%
   View()
+
+list_for_ML_data_f <- function(data) {
+  data %>%
+    #remove genes with only two exons
+    group_by(anno) %>%
+    mutate(exon_count = n()) %>%
+    filter(exon_count > 2) %>%
+    select(-exon_count) %>%
+    ungroup() %>%
+    left_join(all_AS_intersected_feature_raw, by = c("feature", "anno", "order")) %>%
+    replace_na(list(comp = "no", AS = "no", PI = "no", event = "no")) %>%
+    #remove sig event in the first or second exon/intron (promoter effects)
+    mutate(promoter_filter_text = str_c(order, "_", PI)) %>%
+    mutate(promoter_filter = if_else(promoter_filter_text == "1_no" | promoter_filter_text == "2_no", 1, 0)) %>%
+    group_by(anno) %>%
+    mutate(sum_promoter_filter = sum(promoter_filter)) %>%
+    filter(sum_promoter_filter == 2) %>%
+    select(-promoter_filter_text, -promoter_filter, -sum_promoter_filter) %>%
+    #remove genes without having PI_H or PI_L
+    mutate(PI_filter = if_else(PI == "PI_H" | PI == "PI_L", 1, 0)) %>%
+    group_by(anno) %>%
+    mutate(sum_PI_filter = sum(PI_filter)) %>%
+    filter(sum_PI_filter != 0) %>%
+    select(-PI_filter, -sum_PI_filter) %>%
+    #check how many genes with more exons having AS than exons lacking AS 
+    #select(anno, order, AS) %>%
+    #distinct() %>%
+    #group_by(anno) %>%
+    #mutate(count_no_AS = if_else(AS == "no", 1, 0), count_AS = if_else(AS != "no", 1, 0)) %>%
+    #mutate(sum_no_AS = sum(count_no_AS), sum_AS = sum(count_AS)) %>%
+    #filter(sum_no_AS < sum_AS) %>%
+    #remove genes without any sig events
+    mutate(sig_filter = if_else(event == "sig", 1, 0)) %>%
+    mutate(sum_sig_filter = sum(sig_filter)) %>%
+    filter(sum_sig_filter != 0) %>%
+    select(-sig_filter, -sum_sig_filter) %>%
+    split(.$anno)
+}
+
+exon_data_for_ML_list <- list_for_ML_data_f(gene_having_AS_exon_info)
+intron_data_for_ML_list <- list_for_ML_data_f(gene_having_AS_intron_info)
   
+
+make_AS_ML_data_f <- function(data, a, b){ 
+#a is one of three comparisons, b is the type of PI
+AS_sig_m <- data %>%
+  filter(comp == a[1] & PI == b[1] & event == "sig")
+
+AS_noAS_m <- data %>%
+  filter(event == "no") 
+
+AS_noAS_m_f <- head(AS_noAS_m[sample(1:nrow(AS_noAS_m)),], n = nrow(AS_sig_m)) 
+
+bind_rows(AS_sig_m, AS_noAS_m_f)
+}
+
+comp = c("HS6_HS0", "HS1_HS0", "HS1_HS6")
+PI_type = c("PI_H", "PI_L")
+
+exon_data_for_ML_comb_l <- vector("list", length = length(comp))
+intron_data_for_ML_comb_l <- vector("list", length = length(comp))
+
+for (i in seq_along(comp)) {
+  for (j in seq_along(PI_type)) {
+    set.seed(200)
+    exon_data_for_ML_comb_l[[i]][[j]] <- exon_data_for_ML_list %>%
+      map(. %>% make_AS_ML_data_f(., comp[[i]], PI_type[[j]])) %>%
+      bind_rows()
+    
+    intron_data_for_ML_comb_l[[i]][[j]] <- intron_data_for_ML_list %>%
+      map(. %>% make_AS_ML_data_f(., comp[[i]], PI_type[[j]])) %>%
+      bind_rows()
+  }
+}
+
+for (i in seq_along(comp)) {
+  for (j in seq_along(PI_type)) {
+    exon_data_l_final <- bind_rows(exon_data_for_ML_comb_l[[i]][[j]], exon_data_for_ML_comb_l[[i]][[j]]) %>%
+      ungroup() %>%
+      mutate(side = rep(c("five", "three"), each = nrow(exon_data_for_ML_comb_l[[i]][[j]]))) %>% 
+      mutate(str_n = if_else(strand == "+" & side == "five", str - 100,
+                             if_else(strand == "+" & side == "three", end,
+                                     if_else(strand == "-" & side == "five", end, str - 100)))) %>%
+      mutate(end_n = if_else(strand == "+" & side == "five", str,
+                             if_else(strand == "+" & side == "three", end + 100,
+                                     if_else(strand == "-" & side == "five", end + 100, str)))) %>%
+      select(chr, str = str_n, end = end_n, strand, feature, source, anno, order, comp, AS, PI, event, seg_side = side) %>%
+      arrange(chr, anno, str) %>%
+      split(.$event)
+    
+    intro_data_l_final <- bind_rows(intron_data_for_ML_comb_l[[i]][[j]], intron_data_for_ML_comb_l[[i]][[j]]) %>%
+      ungroup() %>%
+      mutate(side = rep(c("five", "three"), each = nrow(intron_data_for_ML_comb_l[[i]][[j]]))) %>% 
+      mutate(str_n = if_else(strand == "+" & side == "five", str - 100,
+                             if_else(strand == "+" & side == "three", end,
+                                     if_else(strand == "-" & side == "five", end, str - 100)))) %>%
+      mutate(end_n = if_else(strand == "+" & side == "five", str,
+                             if_else(strand == "+" & side == "three", end + 100,
+                                     if_else(strand == "-" & side == "five", end + 100, str)))) %>%
+      select(chr, str = str_n, end = end_n, strand, feature, source, anno, order, comp, AS, PI, event, seg_side = side) %>%
+      arrange(chr, anno, str) %>%
+      split(.$event)
+    
+    write_delim(exon_data_l_final$sig, str_c("./data/AS_bed_for_ML/exon_for_ML_", comp[[i]], "_", PI_type[[j]], "_", "sig.bed"), col_names = FALSE, delim = "\t")
+    write_delim(exon_data_l_final$no, str_c("./data/AS_bed_for_ML/exon_for_ML_", comp[[i]], "_", PI_type[[j]], "_", "non_sig.bed"), col_names = FALSE, delim = "\t")
+    
+    write_delim(intro_data_l_final$sig, str_c("./data/AS_bed_for_ML/intron_for_ML_", comp[[i]], "_", PI_type[[j]], "_", "sig.bed"), col_names = FALSE, delim = "\t")
+    write_delim(intro_data_l_final$no, str_c("./data/AS_bed_for_ML/intron_for_ML_", comp[[i]], "_", PI_type[[j]], "_", "non_sig.bed"), col_names = FALSE, delim = "\t")
+
+  }
+}
+
+
+names(test_sig_nosig)
+test_sig_nosig$sig
+AS_bed_for_ML
+
+make_AS_ML_data_f(test_exon_data_for_ML_temp_l[[2]], c("HS1_HS0"), c("PI_H"))
+
+test_exon_data_for_ML_temp_l_small <- test_exon_data_for_ML_temp_l[1:10]
+
+test_exon_data_for_ML_temp_l_small %>%
+  map(. %>% make_AS_ML_data_f(., c("HS1_HS0"), c("PI_H"))) %>%
+  bind_rows()
+
 #This is to check the median size of genes containing AS sig or non sig
 read_delim("./data/Intersected_AS_TPM_q05_M82_anno_rMATs/AS_control_TPM_q05_HS1_HS0_SE_intersected_M82_rMATs_exon_order.bed", delim = "\t", 
            col_names = c("chr", "str", "end", "comp", "AS", "PI", "chr_2", "str_2", "end_2", "strand", "feature", "source", "anno", "order")) %>%
