@@ -4,7 +4,7 @@
 #SBATCH --mem=10G
 #SBATCH --mail-user=yu-ming.hsu@u-psud.fr
 #SBATCH --mail-type=END
-#SBATCH --job-name=test_bamcompare
+#SBATCH --job-name=HS0_bamcompare
 #SBATCH --array=1-19
 
 source ~/.profile

@@ -228,7 +228,7 @@ for (i in seq_along(comp)) {
                              if_else(strand == "+" & side == "three", end + 100,
                                      if_else(strand == "-" & side == "five", end + 100, str)))) %>%
       select(chr, str = str_n, end = end_n, strand, feature, source, anno, order, comp, AS, PI, event, seg_side = side) %>%
-      arrange(chr, anno, str) %>%
+      arrange(chr, str) %>%
       split(.$event)
     
     intro_data_l_final <- bind_rows(intron_data_for_ML_comb_l[[i]][[j]], intron_data_for_ML_comb_l[[i]][[j]]) %>%
@@ -241,7 +241,7 @@ for (i in seq_along(comp)) {
                              if_else(strand == "+" & side == "three", end + 100,
                                      if_else(strand == "-" & side == "five", end + 100, str)))) %>%
       select(chr, str = str_n, end = end_n, strand, feature, source, anno, order, comp, AS, PI, event, seg_side = side) %>%
-      arrange(chr, anno, str) %>%
+      arrange(chr, str) %>%
       split(.$event)
     
     write_delim(exon_data_l_final$sig, str_c("./data/AS_bed_for_ML/exon_for_ML_", comp[[i]], "_", PI_type[[j]], "_", "sig.bed"), col_names = FALSE, delim = "\t")
