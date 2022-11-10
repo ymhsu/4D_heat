@@ -142,30 +142,46 @@ all_AS_events_bed_TPM_q05 <- produce_invervals_TPM_threshold(0.05)
 quantile(all_AS_events_bed_TPM_q05$Inclvl1_r1, seq(0, 1, 0.05))  
 
 #add PI to all AS event before assigning sig and no-sig AS
+#two ways to define PI
+#1. force two replicates to have the same criteria (eg, both r1 & r2 above 0.8 can be considered as PI_H)
+#2. use the average two replicates to define PI
+#the first way will lead to less data for PI_M, PI_ML & PI_MH
+#so I use the second way
+all_AS_events_bed_TPM_q05 %>%
+  filter(comp == "HS6.vs.HS0") %>%
+  View()
+  group_by(comp) %>%
+  summarise()
+
 all_AS_events_bed_TPM_q05_raw <- all_AS_events_bed_TPM_q05 %>%
   #filter(FDR > 0.05) %>%
   #PI means percentage of Inclusion (H: PI > 0.8, MH: 0.6 < PI <= 0.8, M: 0.4 < PI <= 0.6, ML: 0.2 < PI <= 0.4, L PI <= 0.2)
-  mutate(PI = if_else(Inclvl1_r1 > 0.8 & Inclvl1_r2 > 0.8 & Inclvl2_r1 > 0.8 & Inclvl2_r2 > 0.8, "PI_H",
-                      if_else(Inclvl1_r1 <= 0.2 & Inclvl1_r2 <= 0.2 & Inclvl2_r1 <= 0.2 & Inclvl2_r2 <= 0.2, "PI_L",
-                              if_else(Inclvl1_r1 > 0.6 & Inclvl1_r1 <= 0.8 & Inclvl1_r2 > 0.6 & Inclvl1_r2 <= 0.8 &
-                                        Inclvl2_r1 > 0.6 & Inclvl2_r1 <= 0.8 & Inclvl2_r2 > 0.6 & Inclvl2_r2 <= 0.8, "PI_MH",
-                                      if_else(Inclvl1_r1 > 0.4 & Inclvl1_r1 <= 0.6 & Inclvl1_r2 > 0.4 & Inclvl1_r2 <= 0.6 &
-                                                Inclvl2_r1 > 0.4 & Inclvl2_r1 <= 0.6 & Inclvl2_r2 > 0.4 & Inclvl2_r2 <= 0.6, "PI_M",
-                                              if_else(Inclvl1_r1 > 0.2 & Inclvl1_r1 <= 0.4 & Inclvl1_r2 > 0.2 & Inclvl1_r2 <= 0.4 &
-                                                        Inclvl2_r1 > 0.2 & Inclvl2_r1 <= 0.4 & Inclvl2_r2 > 0.2 & Inclvl2_r2 <= 0.4, "PI_ML", "others")))))) %>%
-  filter(PI != "others")
+  mutate(PI = if_else((Inclvl2_r1+Inclvl2_r2)/2 <= 0.2, "PI_L",
+                      if_else((Inclvl2_r1+Inclvl2_r2)/2 > 0.2 & (Inclvl2_r1+Inclvl2_r2)/2 <= 0.4, "PI_ML", 
+                              if_else((Inclvl2_r1+Inclvl2_r2)/2 > 0.4 & (Inclvl2_r1+Inclvl2_r2)/2 <= 0.6, "PI_M",
+                                      if_else((Inclvl2_r1+Inclvl2_r2)/2 > 0.6 & (Inclvl2_r1+Inclvl2_r2)/2 <= 0.8, "PI_MH", "PI_H"))))) 
+  #mutate(PI = if_else(Inclvl1_r1 > 0.8 & Inclvl1_r2 > 0.8 & Inclvl2_r1 > 0.8 & Inclvl2_r2 > 0.8, "PI_H",
+                      #if_else(Inclvl1_r1 <= 0.2 & Inclvl1_r2 <= 0.2 & Inclvl2_r1 <= 0.2 & Inclvl2_r2 <= 0.2, "PI_L",
+                              #if_else(Inclvl1_r1 > 0.6 & Inclvl1_r1 <= 0.8 & Inclvl1_r2 > 0.6 & Inclvl1_r2 <= 0.8 &
+                                        #Inclvl2_r1 > 0.6 & Inclvl2_r1 <= 0.8 & Inclvl2_r2 > 0.6 & Inclvl2_r2 <= 0.8, "PI_MH",
+                                      #if_else(Inclvl1_r1 > 0.4 & Inclvl1_r1 <= 0.6 & Inclvl1_r2 > 0.4 & Inclvl1_r2 <= 0.6 &
+                                                #Inclvl2_r1 > 0.4 & Inclvl2_r1 <= 0.6 & Inclvl2_r2 > 0.4 & Inclvl2_r2 <= 0.6, "PI_M",
+                                              #if_else(Inclvl1_r1 > 0.2 & Inclvl1_r1 <= 0.4 & Inclvl1_r2 > 0.2 & Inclvl1_r2 <= 0.4 &
+                                                        #Inclvl2_r1 > 0.2 & Inclvl2_r1 <= 0.4 & Inclvl2_r2 > 0.2 & Inclvl2_r2 <= 0.4, "PI_ML", "others")))))) 
 
-all_DAS_events_bed_TPM_q05_raw <- all_AS_events_bed_TPM_q05 %>%
-  filter(FDR < 0.05) %>%
-  mutate(PI = if_else(Inclvl1_r1 > 0.8 & Inclvl1_r2 > 0.8, "PI_H",
-                      if_else(Inclvl1_r1 <= 0.2 & Inclvl1_r2 <= 0.2, "PI_L",
-                              if_else(Inclvl1_r1 > 0.6 & Inclvl1_r1 <= 0.8 & Inclvl1_r2 > 0.6 & Inclvl1_r2 <= 0.8, "PI_MH",
-                                      if_else(Inclvl1_r1 > 0.4 & Inclvl1_r1 <= 0.6 & Inclvl1_r2 > 0.4 & Inclvl1_r2 <= 0.6, "PI_M",
-                                              if_else(Inclvl1_r1 > 0.2 & Inclvl1_r1 <= 0.4 & Inclvl1_r2 > 0.2 & Inclvl1_r2 <= 0.4, "PI_ML", "others")))))) %>%
-  filter(PI != "others") 
+all_AS_events_bed_TPM_q05_raw %>%
+  group_by(PI) %>%
+  summarise(count = n())
 
+#make the table for only sig events
+all_DAS_events_bed_TPM_q05_raw <- all_AS_events_bed_TPM_q05_raw %>%
+  filter(FDR < 0.05)
 
-#create the plot of non-sig and sig ASs for the number of their counts
+all_DAS_events_bed_TPM_q05_raw %>%
+  group_by(comp, PI) %>%
+  summarise(count = n())
+
+#create the plot of non-sig and sig ASs for the number of their counts (modified PI)
 #AS
 all_AS_events_bed_TPM_q05_control_count_p <- all_AS_events_bed_TPM_q05_raw %>%
   filter(FDR > 0.05) %>%
@@ -184,7 +200,7 @@ all_AS_events_bed_TPM_q05_control_count_p <- all_AS_events_bed_TPM_q05_raw %>%
         legend.title = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank(), 
         axis.text.y = element_text(size = 18, face = "bold"), strip.text.y = element_text(colour = "black", face = "bold", size = 18), axis.text.x = element_text(size = 16, face = "bold"))
 
-ggsave("./analysis_output/all_AS_events_bed_TPM_q05_control_count_p.jpeg", all_AS_events_bed_TPM_q05_control_count_p, width = 500, height = 400, units = c("mm"), dpi = 320)
+ggsave("./analysis_output/all_AS_events_bed_TPM_q05_control_count_p_modified_PI.jpeg", all_AS_events_bed_TPM_q05_control_count_p, width = 500, height = 400, units = c("mm"), dpi = 320)
 
 
 #DAS                                  
@@ -203,7 +219,7 @@ all_DAS_events_bed_TPM_q05_count_p <- all_DAS_events_bed_TPM_q05_raw %>%
         legend.title = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank(), 
         axis.text.y = element_text(size = 18, face = "bold"), strip.text.y = element_text(colour = "black", face = "bold", size = 18), axis.text.x = element_text(size = 16, face = "bold"))
 
-ggsave("./analysis_output/all_DAS_events_bed_TPM_q05_count_p.jpeg", all_DAS_events_bed_TPM_q05_count_p, width = 500, height = 400, units = c("mm"), dpi = 320)
+ggsave("./analysis_output/all_DAS_events_bed_TPM_q05_count_p_modified_PI.jpeg", all_DAS_events_bed_TPM_q05_count_p, width = 500, height = 400, units = c("mm"), dpi = 320)
 
 
 #generate the the list of control set using 5 categories of PI (percentage of Inclusion)
@@ -216,6 +232,10 @@ all_AS_events_bed_TPM_q05_control_l <- all_AS_events_bed_TPM_q05_raw %>%
   split(.$comp) %>%
   map(. %>% split(.$AS_type)) %>%
   map(. %>% map(. %>% split(.$PI)))
+
+all_AS_events_bed_TPM_q05_raw %>%
+  filter(AS_type == "SE") %>%
+  View()
 
 #Also generate the list of control set without categorizing PI
 all_AS_events_bed_TPM_q05_control_l_noPI <- all_AS_events_bed_TPM_q05_control_l %>%

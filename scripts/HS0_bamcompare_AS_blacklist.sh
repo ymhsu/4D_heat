@@ -8,7 +8,7 @@
 #SBATCH --array=1-19
 
 source ~/.profile
-module load deeptools samtools
+module load deeptools
 
 marks_name=$(sed -n "$SLURM_ARRAY_TASK_ID"p ../data/Chip_seq/no_treatment/bam/mark_list)
 marks_f=/NetScratch/REGARN/yhsu/4D_heat/data/Chip_seq/no_treatment/bam/sorted_dedupPCR_aboveMAPQ30_sorted_trim_M82_${marks_name}.bam
