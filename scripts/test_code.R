@@ -70,10 +70,17 @@ bind_rows(AS_sig_pair_f, AS_non_sig_pair_f)
 }
 length(exon_intron_data_for_ML_list$exon)
 ML_data_test_head10 <- list(head(exon_intron_data_for_ML_list$exon, n = 10), head(exon_intron_data_for_ML_list$intron, n = 10))
-system.time(exon_intron_data_for_ML_list %>%
-  map(. %>% map(. %>% make_AS_ML_data_f(., "HS6_HS0", "PI_H", "RI"))) %>%
+system.time(ML_data_test_head10 %>%
+  map(. %>% map(. %>% make_AS_ML_data_f(., comb_comp_PI_AS_list[[1]][[1]]))) %>%
   map(. %>% bind_rows()))
 
 exon_intron_data_for_ML_comb_l[[1]][[1]][[4]][[4]] <- ML_data_test_head10[[1]] %>%
   map(. %>% make_AS_ML_data_f(., comp[[1]], PI_type[[4]], AS_type[[4]])) %>%
   bind_rows()
+
+exon_intron_data_for_ML_list
+
+registerDoParallel(cores = 10)
+getDoParWorkers()
+
+

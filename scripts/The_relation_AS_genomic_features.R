@@ -1,5 +1,6 @@
+install.packages("pacman")
 library(pacman)
-Packages <- c("tidyverse", "gridExtra", "ggeffects", "cowplot", "caTools", "caret", "grid", "ggplotify")
+Packages <- c("tidyverse", "doMC", "doParallel", "foreach", "gridExtra", "ggeffects", "cowplot", "caTools", "caret", "grid", "ggplotify")
 p_load(Packages, character.only = TRUE)
 
 #import all genes
@@ -216,14 +217,14 @@ exon_intron_data_for_ML_list$exon$Solyc_chr1_NPC00337.MC1
 
 
 #create the function for random choosing the same amount exon/intron as that of AS events occurred in that gene
-make_AS_ML_data_f <- function(data, a, b, c){ 
+make_AS_ML_data_f <- function(data, a){ 
   data_a <- data %>%
     ungroup()
   AS_sig_m <- data_a %>%
-    filter(comp == a[1] & PI == b[1] &  AS == c[1] & event == "sig") 
+    filter(comp == a[1] & PI == a[2] &  AS == a[3] & event == "sig") 
   
   AS_non_sig_m <- data_a %>%
-    filter(comp == a[1] & PI == b[1] &  AS == c[1] & event == "non-sig") 
+    filter(comp == a[1] & PI == a[2] &  AS == a[3] & event == "non-sig") 
   
   if(nrow(AS_sig_m)==0){
     AS_noAS_sig_m <- tibble()
@@ -253,81 +254,101 @@ make_AS_ML_data_f <- function(data, a, b, c){
   
   bind_rows(AS_sig_pair_f, AS_non_sig_pair_f)
 }
-  
+
+
+#make list for parallelism 
 comp = c("HS6_HS0", "HS1_HS0", "HS1_HS6")
-PI_type = c("PI_L", "PI_ML", "PI_M", "PI_MH", "PI_H")
-AS_type
+PI_type = c("PI_L", "PI_ML", "PI_M", "PI_MH", "PI_H")  
+AS_type = c("A5S", "A3S", "SE", "RI")
 
-exon_data_for_ML_comb_l <- vector("list", length = length(comp))
-intron_data_for_ML_comb_l <- vector("list", length = length(comp))
+comb_comp_PI_AS_list_raw <- list()
 
-exon_intron_data_for_ML_comb_l <- list()
-names_exon_intron_data_for_ML_comb_l <- vector()
-
-exon_intron_data_for_ML_list[[1]]
-
-for (l in seq_along(feature)) {
-  for (i in seq_along(comp)) {
-    for (j in seq_along(PI_type)) {
-      for (k in seq_along(AS_type)) {
-        #set.seed(200)
-        print(system.time(a <- ML_data_test_head10[[l]] %>%
-          map(. %>% make_AS_ML_data_f(., comp[[i]], PI_type[[j]], AS_type[[k]])) %>%
-          bind_rows()))
-        #b <- str_c(feature[[l]], "_", comp[[i]], "_", PI_type[[j]], "_", AS_type[[k]])
-        
-        #exon_intron_data_for_ML_comb_l <- append(exon_intron_data_for_ML_comb_l, list(a))
-        #names_exon_intron_data_for_ML_comb_l <- append(names_exon_intron_data_for_ML_comb_l, b)
-        #exon_data_for_ML_comb_l[[i]][[j]] <- exon_data_for_ML_list %>%
-        #map(. %>% make_AS_ML_data_f(., comp[[i]], PI_type[[j]]), AS_type[[k]]) %>%
-        #bind_rows()
-        #intron_data_for_ML_comb_l[[i]][[j]] <- intron_data_for_ML_list %>%
-        #map(. %>% make_AS_ML_data_f(., comp[[i]], PI_type[[j]])) %>%
-        #bind_rows()
-      }
+for (i in seq_along(comp)) {
+  for (j in seq_along(PI_type)) {
+    for (k in seq_along(AS_type)) {
+      comb_raw <- c(comp[[i]], PI_type[[j]], AS_type[[k]])
+      comb_comp_PI_AS_list_raw <- append(comb_comp_PI_AS_list_raw, list(comb_raw))
     }
   }
 }
 
-names(exon_intron_data_for_ML_comb_l)
-length(exon_intron_data_for_ML_comb_l)
-exon_intron_data_for_ML_comb_l[[1]]
-length(exon_intron_data_for_ML_comb_l[[1]])
-ML_data_test_head10[[1]]
+#I will use 10 cores, so here I made the length of list as 6 (60/10 = 6)
+comb_comp_PI_AS_list <- vector("list", length = 6)
+
+for (i in seq_along(comb_comp_PI_AS_list)) {
+  print(seq(10*(i-1)+1, 10*(i-1)+10, 1))
+  comb_comp_PI_AS_list[[i]] <- comb_comp_PI_AS_list_raw[seq(10*(i-1)+1, 10*(i-1)+10, 1)]
+}
+
+#start to use 10 cores
+registerDoParallel(cores = 10)
+getDoParWorkers()
+
+#create all control set from all genes with AS event whehter these events are sig or non-sig
+exon_intron_data_for_ML_list_v2 <- 
+  foreach(i=c(1:6), .packages = c("tidyverse")) %:%
+  foreach(j=1:10, .packages = c("tidyverse")) %dopar% {
+    exon_intron_data_for_ML_list %>%
+      map(. %>% map(. %>% make_AS_ML_data_f(., comb_comp_PI_AS_list[[i]][[j]]))) %>%
+      map(. %>% bind_rows())
+    
+  }
+
+#modify the content in the columns of "comp", "AS" and "PI" for randomed selected events (they are noted as "no" previously)
+exon_intron_data_for_ML_list_v3 <- 
+  foreach(i=c(1:6), .packages = c("tidyverse")) %:%
+  foreach(j=1:10, .packages = c("tidyverse")) %dopar% {
+    exon_intron_data_for_ML_list_v2[[i]][[j]] %>%
+      map(. %>% mutate(comp = if_else(comp == "no", comb_comp_PI_AS_list[[i]][[j]][[1]], comp),
+                       AS = if_else(AS == "no", comb_comp_PI_AS_list[[i]][[j]][[3]], AS),
+                       PI = if_else(PI == "no", comb_comp_PI_AS_list[[i]][[j]][[2]], PI))) 
+    
+  }
+
+#reorganize the list into another form of list based on "comp", "PI", and "AS"
+#plus, exon or intron were combined
+#Since what I wanted to focus on are AS sig/non-sig and no-event segment
+#whether these events are located in exon or intron are not an importnat issue
+#one AS event can be located in an exon of a gene but an intron of the isoform of the same genes
+exon_intron_data_for_ML_list_v4 <- exon_intron_data_for_ML_list_v3 %>%
+  map(. %>% map(. %>% bind_rows())) %>%
+  map(. %>% bind_rows()) %>%
+  bind_rows() %>%
+  split(.$comp) %>%
+  map(. %>% split(.$PI)) %>%
+  map(. %>% map(. %>% split(.$AS)))
+
+#produce two sides (100 bp extension) of each exon or intron with or without AS for the following analysis 
+#(the intersection between these events and histone marks)
 for (i in seq_along(comp)) {
   for (j in seq_along(PI_type)) {
-    exon_data_l_final <- bind_rows(exon_data_for_ML_comb_l[[i]][[j]], exon_data_for_ML_comb_l[[i]][[j]]) %>%
-      ungroup() %>%
-      mutate(side = rep(c("five", "three"), each = nrow(exon_data_for_ML_comb_l[[i]][[j]]))) %>% 
-      mutate(str_n = if_else(strand == "+" & side == "five", str - 100,
-                             if_else(strand == "+" & side == "three", end,
-                                     if_else(strand == "-" & side == "five", end, str - 100)))) %>%
-      mutate(end_n = if_else(strand == "+" & side == "five", str,
-                             if_else(strand == "+" & side == "three", end + 100,
-                                     if_else(strand == "-" & side == "five", end + 100, str)))) %>%
-      select(chr, str = str_n, end = end_n, strand, feature, source, anno, order, comp, AS, PI, event, seg_side = side) %>%
-      arrange(chr, str) %>%
-      split(.$event)
-    
-    intro_data_l_final <- bind_rows(intron_data_for_ML_comb_l[[i]][[j]], intron_data_for_ML_comb_l[[i]][[j]]) %>%
-      ungroup() %>%
-      mutate(side = rep(c("five", "three"), each = nrow(intron_data_for_ML_comb_l[[i]][[j]]))) %>% 
-      mutate(str_n = if_else(strand == "+" & side == "five", str - 100,
-                             if_else(strand == "+" & side == "three", end,
-                                     if_else(strand == "-" & side == "five", end, str - 100)))) %>%
-      mutate(end_n = if_else(strand == "+" & side == "five", str,
-                             if_else(strand == "+" & side == "three", end + 100,
-                                     if_else(strand == "-" & side == "five", end + 100, str)))) %>%
-      select(chr, str = str_n, end = end_n, strand, feature, source, anno, order, comp, AS, PI, event, seg_side = side) %>%
-      arrange(chr, str) %>%
-      split(.$event)
-    
-    write_delim(exon_data_l_final$sig, str_c("./data/AS_bed_for_ML/exon_for_ML_", comp[[i]], "_", PI_type[[j]], "_", "sig.bed"), col_names = FALSE, delim = "\t")
-    write_delim(exon_data_l_final$no, str_c("./data/AS_bed_for_ML/exon_for_ML_", comp[[i]], "_", PI_type[[j]], "_", "non_sig.bed"), col_names = FALSE, delim = "\t")
-    
-    write_delim(intro_data_l_final$sig, str_c("./data/AS_bed_for_ML/intron_for_ML_", comp[[i]], "_", PI_type[[j]], "_", "sig.bed"), col_names = FALSE, delim = "\t")
-    write_delim(intro_data_l_final$no, str_c("./data/AS_bed_for_ML/intron_for_ML_", comp[[i]], "_", PI_type[[j]], "_", "non_sig.bed"), col_names = FALSE, delim = "\t")
-
+    for (k in seq_along(AS_type)) {
+      exon_intron_data_for_ML_f_combined <- bind_rows(exon_intron_data_for_ML_list_v4[[i]][[j]][[k]], exon_intron_data_for_ML_list_v4[[i]][[j]][[k]]) %>%
+        ungroup() %>%
+        mutate(side = rep(c("five", "three"), each = nrow(exon_intron_data_for_ML_list_v4[[i]][[j]][[k]]))) %>% 
+        mutate(str_n = if_else(strand == "+" & side == "five", str - 100,
+                               if_else(strand == "+" & side == "three", end,
+                                       if_else(strand == "-" & side == "five", end, str - 100)))) %>%
+        mutate(end_n = if_else(strand == "+" & side == "five", str,
+                               if_else(strand == "+" & side == "three", end + 100,
+                                       if_else(strand == "-" & side == "five", end + 100, str)))) %>%
+        select(chr, str = str_n, end = end_n, strand, feature, source, anno, order, comp, AS, PI, event, seg_side = side) %>%
+        arrange(chr, str)
+      
+      exon_intron_data_for_ML_f_ctrl <- exon_intron_data_for_ML_f_combined %>%
+        filter(event == "no")
+      
+      exon_intron_data_for_ML_f_target <- exon_intron_data_for_ML_f_combined %>%
+        filter(event != "no")
+      
+      label_comp <- unique(exon_intron_data_for_ML_list_v4[[i]][[j]][[k]]$comp)
+      label_PI <- unique(exon_intron_data_for_ML_list_v4[[i]][[j]][[k]]$PI)
+      label_AS <- unique(exon_intron_data_for_ML_list_v4[[i]][[j]][[k]]$AS)
+      
+      write_delim(exon_intron_data_for_ML_f_ctrl, str_c("./data/AS_bed_for_ML/segment_for_ML_", label_comp, "_", label_PI, "_", label_AS, "_", "target.bed"), col_names = FALSE, delim = "\t")
+      write_delim(exon_intron_data_for_ML_f_ctrl, str_c("./data/AS_bed_for_ML/segment_for_ML_", label_comp, "_", label_PI, "_", label_AS, "_", "ctrl.bed"), col_names = FALSE, delim = "\t")
+      
+    }
   }
 }
 
