@@ -273,21 +273,21 @@ for (i in seq_along(comp)) {
 }
 
 #I will use 10 cores, so here I made the length of list as 6 (60/10 = 6)
-comb_comp_PI_AS_list <- vector("list", length = 6)
+comb_comp_PI_AS_list <- vector("list", length = 5)
 
 for (i in seq_along(comb_comp_PI_AS_list)) {
-  print(seq(10*(i-1)+1, 10*(i-1)+10, 1))
-  comb_comp_PI_AS_list[[i]] <- comb_comp_PI_AS_list_raw[seq(10*(i-1)+1, 10*(i-1)+10, 1)]
+  print(seq(12*(i-1)+1, 12*(i-1)+12, 1))
+  comb_comp_PI_AS_list[[i]] <- comb_comp_PI_AS_list_raw[seq(12*(i-1)+1, 12*(i-1)+12, 1)]
 }
 
 #start to use 10 cores
-registerDoParallel(cores = 10)
+registerDoParallel(cores = 12)
 getDoParWorkers()
 
 #create all control set from all genes with AS event whehter these events are sig or non-sig
 exon_intron_data_for_ML_list_v2 <- 
-  foreach(i=c(1:6), .packages = c("tidyverse")) %:%
-  foreach(j=1:10, .packages = c("tidyverse")) %dopar% {
+  foreach(i=c(1:5), .packages = c("tidyverse")) %:%
+  foreach(j=1:12, .packages = c("tidyverse")) %dopar% {
     exon_intron_data_for_ML_list %>%
       map(. %>% map(. %>% make_AS_ML_data_f(., comb_comp_PI_AS_list[[i]][[j]]))) %>%
       map(. %>% bind_rows())
@@ -296,8 +296,8 @@ exon_intron_data_for_ML_list_v2 <-
 
 #modify the content in the columns of "comp", "AS" and "PI" for randomed selected events (they are noted as "no" previously)
 exon_intron_data_for_ML_list_v3 <- 
-  foreach(i=c(1:6), .packages = c("tidyverse")) %:%
-  foreach(j=1:10, .packages = c("tidyverse")) %dopar% {
+  foreach(i=c(1:5), .packages = c("tidyverse")) %:%
+  foreach(j=1:12, .packages = c("tidyverse")) %dopar% {
     exon_intron_data_for_ML_list_v2[[i]][[j]] %>%
       map(. %>% mutate(comp = if_else(comp == "no", comb_comp_PI_AS_list[[i]][[j]][[1]], comp),
                        AS = if_else(AS == "no", comb_comp_PI_AS_list[[i]][[j]][[3]], AS),
@@ -332,7 +332,7 @@ for (i in seq_along(comp)) {
         mutate(end_n = if_else(strand == "+" & side == "five", str,
                                if_else(strand == "+" & side == "three", end + 100,
                                        if_else(strand == "-" & side == "five", end + 100, str)))) %>%
-        select(chr, str = str_n, end = end_n, strand, feature, source, anno, order, comp, AS, PI, event, seg_side = side) %>%
+        select(chr, str = str_n, end = end_n, strand, feature, source, anno, order, comp, AS, PI, event, pair, seg_side = side) %>%
         arrange(chr, str)
       
       exon_intron_data_for_ML_f_ctrl <- exon_intron_data_for_ML_f_combined %>%
@@ -345,7 +345,7 @@ for (i in seq_along(comp)) {
       label_PI <- unique(exon_intron_data_for_ML_list_v4[[i]][[j]][[k]]$PI)
       label_AS <- unique(exon_intron_data_for_ML_list_v4[[i]][[j]][[k]]$AS)
       
-      write_delim(exon_intron_data_for_ML_f_ctrl, str_c("./data/AS_bed_for_ML/segment_for_ML_", label_comp, "_", label_PI, "_", label_AS, "_", "target.bed"), col_names = FALSE, delim = "\t")
+      write_delim(exon_intron_data_for_ML_f_target, str_c("./data/AS_bed_for_ML/segment_for_ML_", label_comp, "_", label_PI, "_", label_AS, "_", "target.bed"), col_names = FALSE, delim = "\t")
       write_delim(exon_intron_data_for_ML_f_ctrl, str_c("./data/AS_bed_for_ML/segment_for_ML_", label_comp, "_", label_PI, "_", label_AS, "_", "ctrl.bed"), col_names = FALSE, delim = "\t")
       
     }
