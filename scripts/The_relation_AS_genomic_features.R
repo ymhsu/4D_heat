@@ -390,13 +390,13 @@ for (i in seq_along(feature)) {
   }
 }
 
-AS_exon_intron_sig_no_event_l[[1]]
+length(AS_exon_intron_sig_no_event_l)
 
 names(AS_exon_intron_sig_no_event_l)
 str_c("./data/AS_bed_for_ML/", histone_mark_list_m$name_raw[[1]], "_", names_AS_exon_intron_sig_no_event_l[[1]], "_12chr.bed")
 
 read_delim
-
+AS_exon_intron_sig_no_event_l[[1]]
 for (i in seq_along(histone_mark_list_m$name_raw)) {
   for (j in seq_along(names_AS_exon_intron_sig_no_event_l)) {
     
