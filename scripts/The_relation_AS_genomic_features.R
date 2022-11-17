@@ -1,7 +1,8 @@
 install.packages("pacman")
 library(pacman)
-Packages <- c("tidyverse", "doParallel", "foreach", "gridExtra", "ggeffects", "cowplot", "caTools", "grid", "ggplotify")
+Packages <- c("tidyverse", "doParallel", "foreach", "gridExtra", "ggeffects", "cowplot", "caTools", "grid", "ggplotify", "Boruta")
 p_load(Packages, character.only = TRUE)
+
 
 #import all genes
 M82_rMATs_anno_all_gene <- read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_gene.bed", delim = "\t", col_names = c("chr", "str", "end", "strand", "feature", "source", "anno")) %>%
@@ -405,7 +406,7 @@ read_delim
 
 #produce data for ML
 #make a list for operating 10 cores
-#I will use 10 cores, so here I made the length of list as 12 (120/10 = 12)
+#I will use 10 cores, so here I made the length of list as 12 (120/10 = 12) (modified: since I don't have enough RAM, I switch into single CPU and run nested loops to finish the job)
 
 AS_exon_intron_sig_no_event_l_10cores <- vector("list", length = length(AS_exon_intron_sig_no_event_l)/10)
 names_AS_exon_intron_sig_no_event_l_10cores <- vector("list", length = length(AS_exon_intron_sig_no_event_l)/10)
@@ -423,9 +424,9 @@ names_AS_exon_intron_sig_no_event_l_10cores[[1]][[1]]
 AS_all_seg_his_signal_raw <- vector("list", length = length(AS_exon_intron_sig_no_event_l))
 length(AS_all_seg_his_signal_raw)
 
-for (i in seq_along(histone_mark_list_m$name_raw)) {
-  for (j in seq_along(AS_exon_intron_sig_no_event_l)) {
-    feature_size <- AS_exon_intron_sig_no_event_l[[j]] %>%
+for (i in seq_along(AS_exon_intron_sig_no_event_l)) {
+  for (j in seq_along(histone_mark_list_m$name_raw)) {
+    feature_size <- AS_exon_intron_sig_no_event_l[[i]] %>%
       group_by(anno, feature, order) %>%
       mutate(str_n = min(end), end_n = max(str)) %>%
       mutate(feature_size = end_n - str_n) %>%
@@ -437,9 +438,9 @@ for (i in seq_along(histone_mark_list_m$name_raw)) {
       read_delim(
         str_c(
           "./data/AS_bed_for_ML/all_segments/",
-          histone_mark_list_m$name_raw[[i]],
+          histone_mark_list_m$name_raw[[j]],
           "_",
-          str_remove(names_AS_exon_intron_sig_no_event_l[[j]], "segment_"),
+          str_remove(names_AS_exon_intron_sig_no_event_l[[i]], "segment_"),
           "_12chr.bed.gz"
         ),
         delim = "\t",
@@ -463,7 +464,7 @@ for (i in seq_along(histone_mark_list_m$name_raw)) {
       ) %>%
       group_by(anno, feature, order, comp, AS, PI, event, seg_side) %>%
       summarise(mean_signal = sum(AS_signal) / n()) %>%
-      mutate(read_count = histone_mark_list_m$read_count[[i]]) %>%
+      mutate(read_count = histone_mark_list_m$read_count[[j]]) %>%
       mutate(RPM = mean_signal / read_count * 10 ^ 6) %>%
       left_join(feature_size) %>%
       mutate(RPKM = RPM / feature_size) %>%
@@ -479,78 +480,111 @@ for (i in seq_along(histone_mark_list_m$name_raw)) {
         "PI",
         "event",
         "seg_side",
-        str_c(histone_mark_list_m$name_light[[i]], "_RPKM")
+        str_c(histone_mark_list_m$name_light[[j]], "_RPKM")
       )
     if(i!=19){
-    AS_exon_intron_sig_no_event_l[[j]] <- AS_exon_intron_sig_no_event_l[[j]] %>%
+    AS_exon_intron_sig_no_event_l[[i]] <- AS_exon_intron_sig_no_event_l[[i]] %>%
       left_join(test)
     } else {
-      AS_exon_intron_sig_no_event_l[[j]] <- AS_exon_intron_sig_no_event_l[[j]] %>%
+      AS_exon_intron_sig_no_event_l[[i]] <- AS_exon_intron_sig_no_event_l[[i]] %>%
         left_join(test)
-      write_delim(AS_exon_intron_sig_no_event_l[[j]], str_c("./data/AS_bed_for_ML/all_segments/table_ready_", str_remove(names_AS_exon_intron_sig_no_event_l[[j]], "segment_")),
+      write_delim(AS_exon_intron_sig_no_event_l[[i]], str_c("./data/AS_bed_for_ML/all_segments/table_ready_", str_remove(names_AS_exon_intron_sig_no_event_l[[i]], "segment_")),
                   delim = "\t", col_names = TRUE)
     }
   }
 }
 
+#import RPKM raw data
+comp = c("HS6_HS0", "HS1_HS0", "HS1_HS6")
+PI_type = c("PI_H", "PI_MH", "PI_M", "PI_ML", "PI_L")
+AS_type = c("A5S", "A3S", "SE", "RI")
+event = c("target", "ctrl")
 
+path_RPKM_AS_all_seg <- str_c("./data/AS_bed_for_ML/all_segments/table_ready_for_ML_", 
+                              comp[[1]], "_", PI_type[[1]], "_", AS_type[[1]], "_", event[[1]])
 
+table_ready_for_ML_raw <- list()
+name_table_ready_for_ML_raw <- c()
 
-for (i in seq_along(AS_exon_intron_sig_no_event_l)) {
-  if(i==1){
-    print("test")
-  } else {
-    print("testv2")
-  }
-}
-
-
-  foreach(i=c(1:19), .packages = c("tidyverse")) %:%
-  foreach(j=c(1:12), .packages = c("tidyverse")) %:%
-  foreach(k=1:10, .packages = c("tidyverse")) %dopar% {
-    
-    feature_size <- AS_exon_intron_sig_no_event_l_10cores[[j]][[k]] %>%
-      group_by(anno, feature, order) %>%
-      mutate(str_n = min(end), end_n = max(str)) %>%
-      mutate(feature_size = end_n - str_n) %>%
-      ungroup() %>%
-      select(anno, feature, order, feature_size) %>%
-      distinct()
-    
-    
-  }
-
-AS_all_seg_his_signal_raw_v2 <- vector("list", length = length(AS_exon_intron_sig_no_event_l))
-
-for (i in seq_along(histone_mark_list_m$name_raw)) {
-  for (j in seq_along(AS_exon_intron_sig_no_event_l_10cores)) {
-    for (k in seq_along(AS_exon_intron_sig_no_event_l_10cores[[1]])) {
-      print(c(10*(j-1)+k))
-      AS_all_seg_his_signal_raw_v2[[c(10*(j-1)+k)]] <- append(AS_all_seg_his_signal_raw_v2[[c(10*(j-1)+k)]], list(AS_all_seg_his_signal_raw[[i]][[j]][[k]]))
-      AS_all_seg_his_signal_raw_v2[[c(10*(j-1)+k)]] %>%
-        reduce(full_join)
+for (i in seq_along(comp)) {
+  for (j in seq_along(PI_type)) {
+    for (k in seq_along(AS_type)) {
+      for (l in seq_along(event)) {
+        path_RPKM_AS_all_seg <- str_c("./data/AS_bed_for_ML/all_segments/table_ready_for_ML_", 
+                                      comp[[i]], "_", PI_type[[j]], "_", AS_type[[k]], "_", event[[l]])
+        raw_table <- read_delim(path_RPKM_AS_all_seg, delim = "\t") %>%
+          mutate(type = as.factor(str_c(comp[[i]], "_", PI_type[[j]], "_", AS_type[[k]], "_", event[[l]])))
+        raw_table <- raw_table[c(9:11, (ncol(raw_table)-19):ncol(raw_table))] 
+        table_ready_for_ML_raw <- append(table_ready_for_ML_raw, list(raw_table))
+        name_table_ready_for_ML_raw <- append(name_table_ready_for_ML_raw, str_c(comp[[i]], "_", PI_type[[j]], "_", AS_type[[k]], "_", event[[l]]))
+      }
     }
   }
 }
 
+names(table_ready_for_ML_raw) <- name_table_ready_for_ML_raw
 
-#write the data to the output (RPKM of each feature are ready)
-path_AS_exon_intron_sig_no_event_l <- str_c("./data/AS_bed_for_ML/ML_data_each_AS_comp_PI_sig/", names_AS_exon_intron_sig_no_event_l, "_data_ready_raw")
+table_ready_for_ML_raw_target <- table_ready_for_ML_raw[which(str_detect(name_table_ready_for_ML_raw, "target"))]
+names(table_ready_for_ML_raw_target)
 
-pwalk(list(
-  AS_exon_intron_sig_no_event_l,
-  path_AS_exon_intron_sig_no_event_l,
-  delim = "\t",
-  col_names = FALSE
-),
-write_delim)
+#sort the list of target table by the order of variables followed: AS, comp, PI
+table_ready_for_ML_raw_sorted <- table_ready_for_ML_raw %>%
+  map(. %>% as_tibble()) %>%
+  bind_rows() %>%
+  split(.$AS) %>%
+  map(. %>% split(.$comp)) %>%
+  map(. %>% map(. %>% split(.$PI))) %>%
+  map(. %>% map(. %>% map(. %>% select(-AS, -comp, -PI))))
 
-#import RPKM raw data
+#the order of names in the sorted list
+names(table_ready_for_ML_raw_sorted)
+names(table_ready_for_ML_raw_sorted[[1]])
+names(table_ready_for_ML_raw_sorted[[1]][[1]])
 
-for (i in seq_along(path_AS_exon_intron_sig_no_event_l)) {
-  AS_exon_intron_sig_no_event_l[[i]] <- read_delim(path_AS_exon_intron_sig_no_event_l[[i]], 
-                                                   delim = "\t", col_names = c(colnames(AS_exon_intron_sig_no_event_l[[1]])[1:13], str_c(histone_mark_list_m$name_light, "_RPKM")))
+table_ready_for_ML_raw_sorted[[1]][[1]][[1]]
+length(table_ready_for_ML_raw_sorted[[1]])
+
+length(table_ready_for_ML_raw_sorted[[1]][[1]])
+
+#make pairwise table for running ML (stage 1: based on each individual PSI)
+comb_pair_AS_seg_type <- combs(c(1:5), 2) #five PSI type
+table_ready_for_ML_stage_1_raw <- list()
+
+for (i in seq_along(AS_type)) {
+  for (j in seq_along(comp)) {
+    for (k in seq_along(comb_pair_AS_seg_type[,1])) {
+      a <- table_ready_for_ML_raw_sorted[[i]][[j]][comb_pair_AS_seg_type[k,]] %>%
+        bind_rows() %>%
+        as.data.frame()
+      table_ready_for_ML_stage_1_raw <- append(table_ready_for_ML_stage_1_raw, list(a))
+    }
+  }
 }
+
+#divided this list into 12 nested lists for running ML by 10 cores
+#table_ready_for_ML_stage_1_10cores <- vector("list", length = length(table_ready_for_ML_stage_1_raw)/10)
+
+
+#for (i in seq_along(table_ready_for_ML_stage_1_raw)) {
+  #print(seq(10*(i-1)+1, 10*(i-1)+10, 1))
+  #comb_comp_PI_AS_list[[i]] <- comb_comp_PI_AS_list_raw[seq(12*(i-1)+1, 12*(i-1)+12, 1)]
+  #table_ready_for_ML_stage_1_10cores[[i]] <- table_ready_for_ML_stage_1_raw[seq(10*(i-1)+1, 10*(i-1)+10, 1)]
+  
+#}
+table_ready_for_ML_stage_1_boruta <- vector("list", length = length(table_ready_for_ML_stage_1_raw))
+
+for (i in seq_along(table_ready_for_ML_stage_1_raw)) {
+  table_ready_for_ML_stage_1_boruta[[i]] <- Boruta(type~., table_ready_for_ML_stage_1_raw[[i]], doTrace = 2)
+}
+
+plot(table_ready_for_ML_stage_1_boruta[[118]])
+
+Boruta(type~., table_ready_for_ML_stage_1_10cores[[1]][[7]],doTrace = 2)
+
+table_ready_for_ML_stage_1_raw[[1]]
+nrow(table_ready_for_ML_stage_1_10cores[[1]][[10]])
+13/0.3
+sqrt(43)*1.5
 
 colnames(AS_exon_intron_sig_no_event_l[[1]])[1:13]
 ncol(read_delim(path_AS_exon_intron_sig_no_event_l[[1]], delim = "\t", col_names = c(colnames(AS_exon_intron_sig_no_event_l[[1]]), str_c(histone_mark_list_m$name_light, "_RPKM"))))
