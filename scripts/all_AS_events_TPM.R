@@ -169,10 +169,17 @@ all_AS_events_bed_TPM_q05_raw <- all_AS_events_bed_TPM_q05 %>%
                                               #if_else(Inclvl1_r1 > 0.2 & Inclvl1_r1 <= 0.4 & Inclvl1_r2 > 0.2 & Inclvl1_r2 <= 0.4 &
                                                         #Inclvl2_r1 > 0.2 & Inclvl2_r1 <= 0.4 & Inclvl2_r2 > 0.2 & Inclvl2_r2 <= 0.4, "PI_ML", "others")))))) 
 
+#for stage 4 of ML in "The_relation_AS_genomic_features.R"
+all_AS_events_bed_TPM_extremity_PI <- 
 all_AS_events_bed_TPM_q05_raw %>%
-  group_by(PI) %>%
-  summarise(count = n())
+  filter((Inclvl2_r1+Inclvl2_r2)/2 == 1 | (Inclvl2_r1+Inclvl2_r2)/2 == 0) %>%
+  select(chr, AS_type, comp, PI, str_event = str, end_event = end) %>%
+  mutate(comp = str_replace(comp, ".vs.", "_"))
 
+write_delim(all_AS_events_bed_TPM_extremity_PI, "./data/all_AS_events_bed_TPM_extremity_PI", delim = "\t", col_names = TRUE)
+
+  
+  
 #make the table for only sig events
 all_DAS_events_bed_TPM_q05_raw <- all_AS_events_bed_TPM_q05_raw %>%
   filter(FDR < 0.05)

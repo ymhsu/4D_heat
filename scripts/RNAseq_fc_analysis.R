@@ -117,7 +117,9 @@ all_DAS_events_005_bed_raw <- all_DAS_events_005_bed_raw_v1 %>%
                                                if_else(AS_type == "SE", pos_2, pos_5)))))) %>%
   select(chr, str, end, AS_type, comp, FDR, IncLevel1, IncLevel2, Incdf, GeneID, pos_1, pos_2, pos_3, pos_4, pos_5, pos_6) %>%
   filter(Incdf != 0) %>%
-  mutate(Inclusion = if_else(Incdf > 0, "Inc", "Skip")) %>%
+  mutate(Inclusion = if_else(comp == "HS1.vs.HS0" & Incdf > 0, "Inc", 
+                             if_else(comp == "HS6.vs.HS0" & Incdf > 0, "Inc", 
+                                     if_else(comp == "HS1.vs.HS6" & Incdf < 0, "Inc", "Skip")))) %>%
   arrange(FDR) %>%
   group_by(comp, AS_type, Inclusion) %>%
   mutate(event = c(1:n())) %>%
@@ -137,7 +139,9 @@ all_AS_events_bed_raw <- all_AS_events_bed_raw_v1 %>%
                                                if_else(AS_type == "SE", pos_2, pos_5)))))) %>%
   select(chr, str, end, AS_type, comp, FDR, IncLevel1, IncLevel2, Incdf, GeneID, pos_1, pos_2, pos_3, pos_4, pos_5, pos_6) %>%
   filter(Incdf != 0) %>%
-  mutate(Inclusion = if_else(Incdf > 0, "Inc", "Skip")) %>%
+  mutate(Inclusion = if_else(comp == "HS1.vs.HS0" & Incdf > 0, "Inc", 
+                             if_else(comp == "HS6.vs.HS0" & Incdf > 0, "Inc", 
+                                     if_else(comp == "HS1.vs.HS6" & Incdf < 0, "Inc", "Skip")))) %>%
   arrange(FDR) %>%
   group_by(comp, AS_type, Inclusion) %>%
   mutate(event = c(1:n())) %>%
