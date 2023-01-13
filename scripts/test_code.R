@@ -450,6 +450,215 @@ exon_intron_data_for_ML_list_v4$HS1_HS0$PI_H$A3S %>%
   select(anno, gene_size_dis_500bp) %>%
   distinct() %>%
   group_by(gene_size_dis_500bp) %>%
-  summarise(count = n()) %>%
-  View()
+  summarise(count = n())
+
+temp_ml_s1_target <- list()
+
+for (i in seq_along(name_ML_stage_1_target_peaks_for_plot)) {
+  #output_table <- process_the_Boruta_data(table_ready_for_ML_stage_1_peak_target_boruta[[i]])
+  output_table <- read_delim(str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_1_peaks/", name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks"), delim = "\t", col_names = TRUE)
   
+  temp_ml_s1_target <- append(temp_ml_s1_target, list(output_table))
+  
+  #g <- process_the_Boruta_data(table_ready_for_ML_stage_1_peak_target_boruta[[i]]) %>%
+    #plot_boruta() +
+    #ggtitle(str_c(name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks")) 
+  
+  #output_plot <- theme_ym(g)
+  
+  ggsave(str_c("./analysis/AS_all_seg_ML_stage_1_peaks/", name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks.jpeg"), output_plot, width = 400, height = 240, units = c("mm"), dpi = 320)
+  
+}
+
+test <- temp_ml_s1_target[[1]] %>%
+  plot_boruta() +
+  ggtitle(str_c(name_ML_stage_1_target_peaks_for_plot[[1]], "_peaks")) +
+  theme(strip.text.x = element_text(colour = "black", face = "bold", size = 18), legend.text = element_text(size = 12, face = "bold"), plot.title = element_text(hjust = 0.5, colour = "black", face = "bold", size = 36),
+        legend.title = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank(), 
+        axis.text.y = element_text(color = "black", size = 28, face = "bold"), strip.text.y = element_text(colour = "black", face = "bold", size = 18), 
+        axis.text.x = element_text(colour = "black", size = 32, face = "bold", angle = 45, vjust = 0.5))
+
+ggsave(str_c("./analysis/AS_all_seg_ML_stage_1_peaks/", name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks_v2.jpeg"), test, width = 400, height = 240, units = c("mm"), dpi = 320)
+
+
+temp_ml_s4_target <- list()
+temp_ml_s4_target_v2 <- list()
+
+for (i in c(1:12)) {
+  #output_table <- process_the_Boruta_data(table_ready_for_ML_stage_1_peak_target_boruta[[i]])
+  #names_output <- str_c(str_remove(names_AS_exon_intron_sig_no_event_l_s4[[i]], "segment_for_ML_"), "_vs_PI_M")
+  names_output <- str_c(str_remove(unique(table_ready_for_ML_raw_peak_s4_v2[[i]]$type)[1], "segment_for_ML_"), "_vs_PI_L_ext")
+  a <- read_delim(str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_4_peaks/", names_output), delim = "\t", col_names = TRUE)
+  
+  #output_table <- read_delim(str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_4_peaks/", name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks"), delim = "\t", col_names = TRUE)
+  
+  #temp_ml_s4_target <- append(temp_ml_s4_target, list(a))
+  temp_ml_s4_target_v2 <- append(temp_ml_s4_target_v2, list(a))
+  g <- a %>%
+    plot_boruta() +
+    ggtitle(names_output) 
+  
+  output_plot <- theme_ym(g)
+  
+  ggsave(str_c("./analysis/AS_all_seg_ML_s4_peaks/", names_output, "_peaks.jpeg"), output_plot, width = 400, height = 240, units = c("mm"), dpi = 320)
+  
+}
+temp_ml_s4_target
+
+temp_ml_s4_target[str_detect(names_AS_exon_intron_sig_no_event_l_s4, "PI_L")] %>%
+  bind_rows() %>%
+  pivot_longer(everything()) %>%
+  group_by(name) %>%
+  summarise(mean = mean(value)) %>%
+  arrange(-mean)
+
+
+temp_ml_s4_target_v2 %>%
+  bind_rows() %>%
+  pivot_longer(everything()) %>%
+  group_by(name) %>%
+  summarise(mean = mean(value)) %>%
+  arrange(-mean)
+
+
+All_DAS_events_all_comparisons_refined <- read_delim("./data/rMATS_out/All_DAS_events_all_comparisons_refined.tsv", delim = "\t") %>%
+  mutate(ID_modified = str_remove(Event_ID, GeneID))
+
+AS_coordinate_refined <- str_split(All_DAS_events_all_comparisons_refined$ID_modified, "_", simplify = TRUE)
+
+All_DAS_events_all_comparisons_refined_v2 <- 
+  tibble(
+    GeneID = str_c(All_DAS_events_all_comparisons_refined$GeneID),
+    pos_1 = as.double(AS_coordinate_refined[,2]),
+    pos_2 = as.double(AS_coordinate_refined[,3]),
+    pos_3 = as.double(AS_coordinate_refined[,4]),
+    pos_4 = as.double(AS_coordinate_refined[,5]),
+    pos_5 = as.double(AS_coordinate_refined[,6]),
+    pos_6 = as.double(AS_coordinate_refined[,7]),
+    AS_type = All_DAS_events_all_comparisons_refined$AS_type,
+    comp = All_DAS_events_all_comparisons_refined$comp
+  ) %>%
+  mutate(status = "refined")
+
+all_AS_events_bed_TPM_q05_refined <- all_AS_events_bed_TPM_q05 %>%
+  mutate(GeneID = str_remove(GeneID, "gene:")) %>%
+  left_join(All_DAS_events_all_comparisons_refined_v2) %>%
+  #View()
+  drop_na() %>%
+  select(chr, str_event=str, end_event=end, GeneID, comp, AS=AS_type) %>%
+  mutate(comp = str_replace(comp, ".vs.", "_"))
+
+
+table_ready_for_ML_raw_peak_refined <- list()
+name_table_ready_for_ML_raw_peak_refined <- c()
+
+for (i in seq_along(comp)) {
+  for (j in seq_along(PI_type)) {
+    for (k in seq_along(AS_type)) {
+      for (l in seq_along(target)) {
+        print(str_c(comp[[i]], "_", PI_type[[j]], "_", AS_type[[k]], "_", target[[l]]))
+        path_RPKM_AS_all_seg <- str_c("./data/AS_bed_for_ML/all_segments/table_ready_p005_peaks_pileup_for_ML_", 
+                                      comp[[i]], "_", PI_type[[j]], "_", AS_type[[k]], "_", target[[l]])
+        raw_table <- read_delim(path_RPKM_AS_all_seg, delim = "\t") %>%
+          mutate(type = as.factor(str_c(comp[[i]], "_", PI_type[[j]], "_", AS_type[[k]], "_", target[[l]])))
+        
+        #raw_table <- raw_table[c(9:11, (ncol(raw_table)-19):ncol(raw_table))] 
+        table_ready_for_ML_raw_peak_refined <- append(table_ready_for_ML_raw_peak_refined, list(raw_table))
+        name_table_ready_for_ML_raw_peak_refined <- append(name_table_ready_for_ML_raw_peak_refined, str_c(comp[[i]], "_", PI_type[[j]], "_", AS_type[[k]], "_", target[[l]]))
+      }
+    }
+  }
+}
+
+grep
+
+table_ready_for_ML_raw_peak_refined[[1]]$anno[[1]]
+
+table_ready_for_ML_raw_peak_refined_sorted <- table_ready_for_ML_raw_peak_refined %>%
+  map(. %>% replace_na(list(Pol2_RPKM = 0, H3K14ac_RPKM = 0, H3K4ac_RPKM = 0, K18ac_RPKM = 0, K27ac_RPKM = 0,
+                  K27me3_RPKM = 0, K4me1_RPKM = 0, K4me3_RPKM = 0, K9ac_RPKM = 0, H3K36me3_RPKM = 0,
+                  H3K79ac_RPKM = 0, H4K12ac_RPKM = 0, H4K16ac_RPKM = 0, H4K20ac_RPKM = 0, H4K5ac_RPKM = 0,
+                  H4K8ac_RPKM = 0, K36ac_RPKM = 0, K4me2_RPKM = 0, K56ac_RPKM = 0))) %>%
+  map(. %>% mutate(GeneID = str_extract(anno, ".*\\..*\\."))) %>%
+  map(. %>% mutate(GeneID = str_remove(GeneID, "\\.$"))) %>%
+  map(. %>% left_join(all_AS_events_bed_TPM_q05_refined)) %>%
+  map(. %>% drop_na()) %>%
+  map(. %>% group_by(anno, feature, order)) %>%
+  map(. %>% mutate(label = if_else(min(end) <= str_event & max(str) >= end_event, "pass", "removed"))) %>%
+  map(. %>% filter(label == "pass")) %>%
+  map(. %>% ungroup()) %>%
+  map(. %>% select(-label)) %>%
+  map(. %>% select(AS, comp, PI, Pol2_RPKM, H3K14ac_RPKM, H3K4ac_RPKM, K18ac_RPKM, K27ac_RPKM,
+                  K27me3_RPKM, K4me1_RPKM, K4me3_RPKM, K9ac_RPKM, H3K36me3_RPKM,
+                  H3K79ac_RPKM, H4K12ac_RPKM, H4K16ac_RPKM, H4K20ac_RPKM, H4K5ac_RPKM,
+                  H4K8ac_RPKM, K36ac_RPKM, K4me2_RPKM, K56ac_RPKM, type)) %>%
+  bind_rows() %>%
+  split(.$AS) %>%
+  map(. %>% split(.$comp)) %>%
+  map(. %>% map(. %>% split(.$PI))) %>%
+  map(. %>% map(. %>% map(. %>% select(-AS, -comp, -PI))))
+
+
+comb_pair_AS_seg_type <- combs(c(1:5), 2) #five PSI type
+
+
+table_ready_for_ML_stage_1_raw_peak_target_refined <- list()
+name_pairwise_table_for_ML_stage_1_raw_peak_target_refined <- list()
+comb_pair_AS_seg_type[1,]
+
+for (i in seq_along(AS_type)) {
+  for (j in seq_along(comp)) {
+    for (k in seq_along(comb_pair_AS_seg_type[,1])) {
+      a <- table_ready_for_ML_raw_peak_refined_sorted[[i]][[j]][comb_pair_AS_seg_type[k,]] %>%
+        bind_rows()
+      
+      type_check <- a %>%
+        select(type) %>%
+        unique()
+      print(type_check)
+      a <- a %>%
+        as.data.frame()
+      table_ready_for_ML_stage_1_raw_peak_target_refined <- append(table_ready_for_ML_stage_1_raw_peak_target_refined, list(a))
+      name_pairwise_table_for_ML_stage_1_raw_peak_target_refined <- append(name_pairwise_table_for_ML_stage_1_raw_peak_target_refined, list(type_check))
+    }
+  }
+}
+unique(table_ready_for_ML_stage_1_raw_peak_target[[1]]$type)
+
+table_ready_for_ML_stage_1_peak_target_refined_boruta <- vector("list", length = length(table_ready_for_ML_stage_1_raw_peak_target_refined))
+
+for (i in seq_along(table_ready_for_ML_stage_1_peak_target_refined_boruta)) {
+  print(str_c("start boruta for the ", i, "th dataset"))
+  table_ready_for_ML_stage_1_peak_target_refined_boruta[[i]] <- Boruta(type~., table_ready_for_ML_stage_1_raw_peak_target_refined[[i]], doTrace = 2)
+}
+
+attStats(table_ready_for_ML_stage_1_peak_target_refined_boruta[[2]])
+table_ready_for_ML_stage_1_peak_target_refined_boruta[[2]]$ImpHistory %>%
+  as_tibble() %>%
+  pivot_longer(everything()) %>%
+  filter(is.finite(value)==TRUE)
+
+boruta_table <- function(data){
+  data$ImpHistory %>%
+    as_tibble() %>%
+    pivot_longer(everything()) %>%
+    filter(is.finite(value)==TRUE)
+}
+
+table_ready_for_ML_stage_1_peak_target_refined_boruta %>%
+  map(. %>% boruta_table()) %>%
+  bind_rows() %>%
+  group_by(name) %>%
+  summarise(mean_Z = mean(value)) %>%
+  arrange(-mean_Z) %>%
+  View()
+
+
+table_ready_for_ML_stage_1_peak_target_refined_boruta %>%
+map(. %>% process_the_Boruta_data) %>%
+  bind_rows() %>%
+  pivot_longer(everything()) %>%
+  group_by(name) %>%
+  summarise(mean_Z = mean(value)) %>%
+  arrange(-mean_Z) %>%
+  View()

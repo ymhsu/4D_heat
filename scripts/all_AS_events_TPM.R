@@ -41,6 +41,9 @@ M82_all_exon %>%
 all_AS_events <- read_delim("./data/rMATS_out/All_events_all_comparisons.tsv", delim = "\t") %>%
   mutate(ID_modified = str_remove(ID, GeneID))
 
+all_AS_events %>%
+  View()
+
 #split ID_modified to get 6 position of the necessary information for alternative splicing
 AS_coordinate_all <- str_split(all_AS_events$ID_modified, "_", simplify = TRUE)
 
@@ -140,6 +143,156 @@ all_AS_events_bed_TPM_raw %>%
 all_AS_events_bed_TPM_q05 <- produce_invervals_TPM_threshold(0.05)
 
 quantile(all_AS_events_bed_TPM_q05$Inclvl1_r1, seq(0, 1, 0.05))  
+#check the difference of different comparison
+
+all_AS_events_bed_TPM_raw %>%
+  filter(str_detect(IncLevel1, "NA")==FALSE & str_detect(IncLevel2, "NA")==FALSE) %>%
+  filter(Incdf == 0)
+
+all_AS_events_bed_TPM_raw %>%
+#all_AS_events_bed_TPM_q05 %>%
+  filter(str == 65157159) %>%
+  #filter(Incdf == 0) %>%
+  View()
+
+all_AS_events_bed_TPM_q05_comp <- all_AS_events_bed_TPM_q05 %>%
+  #select(chr, str, end, AS_type, comp) %>%
+  split(.$comp)
+
+all_AS_events_bed_TPM_raw_comp <- all_AS_events_bed_TPM_raw %>%
+  split(.$comp)
+
+all_AS_events_bed_TPM_raw %>%
+  filter(Incdf == 0) %>%
+  View()
+56093616
+83922950
+83923537
+all_AS_events_bed_TPM_raw %>%
+  filter(str == 83922950 & end == 83923537) %>%
+  View()
+
+all_AS_events_bed_TPM_raw %>%
+  filter(str == 34553445 & end == 34553459) %>%
+  View()
+
+all_AS_events_bed_TPM_q05_comp$HS6.vs.HS0 %>%
+  View()
+
+all_AS_events_bed_TPM_q05_comp$HS1.vs.HS0 %>%
+  select(chr, str, end, AS_type, comp_1 = comp) %>%
+  full_join(all_AS_events_bed_TPM_q05_comp$HS6.vs.HS0) %>%
+  select(chr, str, end, AS_type, comp_1, comp_2 = comp) %>%
+  full_join(all_AS_events_bed_TPM_q05_comp$HS1.vs.HS6) %>%
+  select(chr, str, end, AS_type, comp_1, comp_2, comp_3 = comp) %>%
+  full_join(all_AS_events_bed_TPM_q05) %>%
+  filter(is.na(comp_1)==FALSE & is.na(comp_2) == TRUE & is.na(comp_3) == TRUE) %>%
+  View()
+
+#include every event
+all_event_ID <- all_AS_events_bed_TPM_raw_comp$HS1.vs.HS0 %>%
+  select(chr, str, end, AS_type, comp_1 = comp) %>%
+  full_join(all_AS_events_bed_TPM_raw_comp$HS6.vs.HS0) %>%
+  select(chr, str, end, AS_type, comp_1, comp_2 = comp) %>% 
+  #full_join(all_AS_events_bed_TPM_raw_comp$HS1.vs.HS6) %>%
+  #select(chr, str, end, AS_type, comp_1, comp_2, comp_3 = comp) %>%
+  mutate(event = str_c(chr, "_", str, "_", end, "_", AS_type))
+
+#remove the PSI of the former (latter) in 1, end the latter (former) in 0, all events with 2 rep (no NA) 
+all_AS_events_bed_TPM_raw_light <- 
+all_AS_events_bed_TPM_raw %>%
+  select(chr, str, end, AS_type, IncLevel1, IncLevel2) %>%
+  distinct()
+
+all_event_ID_noPSIext_noNA <-
+all_event_ID %>%
+  left_join(all_AS_events_bed_TPM_raw_light) %>%
+  filter(str_detect(IncLevel1, "NA")==FALSE & str_detect(IncLevel2, "NA")==FALSE) %>%
+  filter(str_detect(IncLevel1, "1.0,1.0") == FALSE & str_detect(IncLevel2, "0.0,0.0") == FALSE) %>%
+  filter(str_detect(IncLevel2, "1.0,1.0") == FALSE & str_detect(IncLevel1, "0.0,0.0") == FALSE)
+
+#the function of making venn diagram
+making_venn_AS <- function(data){
+  HS0_HS1 <- data %>%
+    filter(is.na(comp_1)==FALSE) %>%
+    select(event)
+  
+  HS0_HS6 <- data %>%
+    filter(is.na(comp_2) == FALSE) %>%
+    select(event)
+  
+  #HS1_HS6 <- data %>%
+    #filter(is.na(comp_3) == FALSE) %>%
+    #select(event)
+  
+  event <- data$event
+  #comp <- list(HS0_HS1 = HS0_HS1$event, HS0_HS6 = HS0_HS6$event, HS1_HS6 = HS1_HS6$event)
+  comp <- list(HS0_HS1 = HS0_HS1$event, HS0_HS6 = HS0_HS6$event)
+  ggvenn(comp)
+}
+
+venn_all_AS <- making_venn_AS(all_event_ID)
+ggsave("./analysis/AS_venn_df_comp/venn_all_AS.jpeg", venn_all_AS, width = 300, height = 240, units = c("mm"), dpi = 320)
+
+venn_all_AS_2comp <- making_venn_AS(all_event_ID)
+ggsave("./analysis/AS_venn_df_comp/venn_all_AS_2comp.jpeg", venn_all_AS_2comp, width = 300, height = 240, units = c("mm"), dpi = 320)
+
+
+venn_all_AS_v2_2comp <- making_venn_AS(all_event_ID_noPSIext_noNA)
+ggsave("./analysis/AS_venn_df_comp/venn_all_AS_v2_2comp.jpeg", venn_all_AS_v2_2comp, width = 300, height = 240, units = c("mm"), dpi = 320)
+
+
+
+all_AS_events_bed_TPM_raw_comp$HS1.vs.HS0 %>%
+  select(chr, str, end, AS_type, comp_1 = comp) %>%
+  full_join(all_AS_events_bed_TPM_raw_comp$HS6.vs.HS0) %>%
+  select(chr, str, end, AS_type, comp_1, comp_2 = comp) %>%
+  full_join(all_AS_events_bed_TPM_raw_comp$HS1.vs.HS6) %>%
+  select(chr, str, end, AS_type, comp_1, comp_2, comp_3 = comp) %>%
+  filter(is.na(comp_1)==FALSE & is.na(comp_2) == TRUE & is.na(comp_3) == TRUE) %>%
+  left_join(all_AS_events_bed_TPM_raw) %>%
+  #filter(is.na(comp_1)==TRUE & is.na(comp_2) == TRUE & is.na(comp_3) == FALSE) %>%
+  filter(str_detect(IncLevel2, "1.0")==TRUE) %>%
+  #filter(str_detect(IncLevel2, "0.0")==FALSE) %>%
+  View()
+  
+19696158
+19696231
+all_AS_events_bed_TPM_raw %>%
+  filter(str == 19696158 & end == 19696231) %>%
+  View()
+ 
+all_AS_events %>%
+  #filter(str_detect(ID, "34553445")==TRUE) %>%
+  View()
+
+all_AS_events_bed_TPM_raw %>%
+  View()
+
+#check the difference between three pairwise comp
+if (!require(devtools)) install.packages("devtools")
+
+devtools::install_github("yanlinlin82/ggvenn")
+install.packages("cli")
+update.packages()
+library(ggVennDiagram)
+Sys.getlocale()
+Sys.setenv("LANGUAGE"="EN")
+remove.packages("cli")
+library(ggvenn)
+genes <- paste("gene",1:1000,sep="")
+x <- list(
+  A = sample(genes,300), 
+  B = sample(genes,525), 
+  C = sample(genes,440),
+  D = sample(genes,350)
+)
+x
+ggvenn(x)
+
+
+
+
 
 #add PI to all AS event before assigning sig and no-sig AS
 #two ways to define PI

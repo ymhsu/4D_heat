@@ -127,6 +127,12 @@ gene_having_AS <- all_AS_intersected_feature_raw %>%
   arrange(anno) %>%
   distinct()
 
+all_AS_intersected_feature_raw %>%
+  select(anno) %>%
+  distinct() %>%
+  #group_by(feature) %>%
+  summarise(count = n())
+
 #Import all exon and intron with the order into
 M82_rMATs_anno_all_exon_order <- read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_exon_order.bed", col_names = c("chr", "str", "end", "strand", "feature", "source", "anno", "order"))
 M82_rMATs_anno_all_intron_order <- read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_intron_order.bed", col_names = c("chr", "str", "end", "strand", "feature", "source", "anno", "order"))
@@ -145,34 +151,37 @@ gene_having_AS_info_l_f <- gene_having_AS_info_l %>%
   map(. %>% select(-event)) %>%
   map(. %>% distinct())
 
-gene_having_AS_info_size <- gene_having_AS_info_l_f %>%
-  bind_rows() %>%
-  left_join(M82_rMATs_anno_all_gene_light) %>%
-  mutate(gene_size_dis_500bp = gene_size %/% 1000) %>%
-  select(anno, gene_size_dis_500bp) %>%
+gene_having_AS_light <- gene_having_AS %>%
+  select(anno) %>%
   distinct() %>%
-  #View()
-  group_by(gene_size_dis_500bp) %>%
-  summarise(count = n()) %>%
-  View()
-#gene without AS
-gene_lackng_AS_info_l_f <- gene_having_AS_info_l %>%
-  map(. %>% arrange(chr, str)) %>%
-  map(. %>% left_join(gene_having_AS)) %>%
-  map(. %>% replace_na(list(event = "no"))) %>%
-  map(. %>% filter(event == "no")) %>%
-  map(. %>% select(-event)) %>%
-  map(. %>% distinct())
+  mutate(having_AS = "yes")
 
-gene_lackng_AS_info_l_f %>%
-  bind_rows() %>%
+#gene without AS (external ctrl)
+#since this is for choosing external ctrl, the first/second exon and intron are removed
+
+gene_lacking_AS_info_l <- bind_rows(gene_having_AS_info_l) %>%
+  left_join(gene_having_AS_light) %>%
+  replace_na(list(having_AS = "no")) %>%
+  filter(having_AS == "no") %>%
+  select(-having_AS) %>%
   left_join(M82_rMATs_anno_all_gene_light) %>%
   mutate(gene_size_dis_500bp = gene_size %/% 500) %>%
-  select(anno, gene_size_dis_500bp) %>%
-  distinct() %>%
   group_by(gene_size_dis_500bp) %>%
-  summarise(count = n()) %>%
-  View()
+  mutate(nrow = n()) %>%
+  mutate(nrow_remaining = nrow %% 5) %>%
+  #making five groups with similar amount of genes with similar sizes
+  mutate(sub_group = c(rep(c(1:5), each = n() %/% 5), sample(c(1:5), n() %% 5))) %>%
+  mutate(sub_group_sh = sample(sub_group)) %>%
+  mutate(sub_group_sh = str_c("sh", sub_group_sh)) %>%
+  select(-nrow, -nrow_remaining, -sub_group) %>%
+  filter(order != 1 & order != 2) %>%
+  ungroup()
+
+gene_lacking_AS_info_l %>%
+  group_by(anno) %>%
+  summarise(count = n())
+
+write_delim(gene_lacking_AS_info_l, "./data/important_features_comp/external_ctrl.bed", delim = "\t", col_names = FALSE)
 
 #have a quick look how many exons do genes with SE have in general 
 gene_having_AS_info_l_f$exon %>%
@@ -251,7 +260,7 @@ exon_intron_data_for_ML_list$exon$Solyc_chr1_NPC00337.MC1
 
 #create the function for random choosing the same amount of exon/intron as that of AS events occurred in that gene 
 #(internal control)
-make_AS_ML_data_f <- function(data, a){-- 
+make_AS_ML_data_f <- function(data, a){ 
   data_a <- data %>%
     ungroup()
   AS_sig_m <- data_a %>%
@@ -353,7 +362,7 @@ exon_intron_data_for_ML_list_v4 <- exon_intron_data_for_ML_list_v3 %>%
   map(. %>% split(.$PI)) %>%
   map(. %>% map(. %>% split(.$AS)))
 
-#produce two sides (100 bp extension) of each exon or intron with or without AS for the following analysis 
+#produce two sides (100 bp extension) of each exon or intron with or without AS for the following analysis (target and internal ctrl)
 #(the intersection between these events and histone marks)
 for (i in seq_along(comp)) {
   for (j in seq_along(PI_type)) {
@@ -392,6 +401,24 @@ for (i in seq_along(comp)) {
   }
 }
 
+#produce two sides of 100-bp extension (external ctrl)
+exon_intron_data_for_ML_f_ex_ctrl <- bind_rows(gene_lacking_AS_info_l, gene_lacking_AS_info_l) %>%
+  mutate(side = rep(c("five", "three"), each = nrow(gene_lacking_AS_info_l))) %>% 
+  mutate(str_n = if_else(strand == "+" & side == "five", str - 100,
+                         if_else(strand == "+" & side == "three", end,
+                                 if_else(strand == "-" & side == "five", end, str - 100)))) %>%
+  mutate(end_n = if_else(strand == "+" & side == "five", str,
+                         if_else(strand == "+" & side == "three", end + 100,
+                                 if_else(strand == "-" & side == "five", end + 100, str)))) %>%
+  mutate(comp = "no", AS = "no", PI = sub_group_sh, event = "no", pair = "external_ctrl") %>%
+  select(chr, str = str_n, end = end_n, strand, feature, source, anno, order, comp, AS, PI, event, pair, seg_side = side) %>%
+  arrange(chr, str) %>%
+  split(.$PI)
+
+
+pwalk(list(exon_intron_data_for_ML_f_ex_ctrl, str_c("./data/AS_bed_for_ML/segment_for_ML_", names(exon_intron_data_for_ML_f_ex_ctrl), "_ex_ctrl.bed")),
+      write_delim, col_names = FALSE, delim = "\t" )
+
 ##after using bedtools intersect for target/ctrl with mark signals from all bases or peaks
 ##we can produce data for running ML
 #stage 1 (based on each individual PSI)
@@ -429,6 +456,7 @@ for (i in seq_along(comp)) {
         
         AS_table <- read_delim(str_c("./data/AS_bed_for_ML/segment_for_ML_", comp[[i]], "_", PI_type[[j]], "_", AS_type[[k]], "_", target[[l]], ".bed"), delim = "\t",
                                                                    col_names = c("chr", "str", "end", "strand", "feature", "source", "anno", "order", "comp", "AS", "PI", "event", "pair", "seg_side")) %>%
+          #the reason to have order_t is to separate five and three end of the same gene for taking the information of histone modification marks
           mutate(order_t = c(1:n()))
         names_AS_exon_intron_sig_no_event_l <- append(names_AS_exon_intron_sig_no_event_l, str_c("segment_for_ML_", comp[[i]], "_", PI_type[[j]], "_", AS_type[[k]], "_", target[[l]]))
         AS_exon_intron_sig_no_event_l <- append(AS_exon_intron_sig_no_event_l, list(AS_table))
@@ -438,8 +466,10 @@ for (i in seq_along(comp)) {
 }
 
 length(AS_exon_intron_sig_no_event_l)
-
-names(AS_exon_intron_sig_no_event_l)
+AS_exon_intron_sig_no_event_l[[1]]
+exon_intron_data_for_ML_f_ex_ctrl[[1]]
+names(AS_exon_intron_sig_no_event_l) <- names_AS_exon_intron_sig_no_event_l
+names_AS_exon_intron_sig_no_event_l
 str_c("./data/AS_bed_for_ML/", histone_mark_list_m$name_raw[[1]], "_", names_AS_exon_intron_sig_no_event_l[[1]], "_12chr.bed")
 
 #3. calculate the signal of marks in events containing (target) or not containing AS (ctrl)
@@ -718,7 +748,7 @@ for (i in seq_along(table_ready_for_ML_stage_1_target_boruta)) {
 #target
 table_ready_for_ML_stage_1_raw_peak_target <- list()
 name_pairwise_table_for_ML_stage_1_raw_peak_target <- list()
-
+comb_pair_AS_seg_type[1,]
 for (i in seq_along(AS_type)) {
   for (j in seq_along(comp)) {
     for (k in seq_along(comb_pair_AS_seg_type[,1])) {
@@ -843,14 +873,23 @@ process_the_Boruta_data <- function(x, whichShadow=c(TRUE,TRUE,TRUE),
   rownames(df) <- NULL
   return(df)
 }
+#the function of raw ggplot
+plot_boruta <- function(data){
+  data %>%
+    pivot_longer(everything()) %>%
+    mutate(name = str_remove(name, "_RPKM")) %>%
+    mutate(mark = if_else(str_detect(name, "shadow")==TRUE, "shadowmarks", "marks")) %>%
+    ggplot(aes(x = fct_reorder(name, value, median), y = value)) +
+    geom_boxplot(aes(fill = mark))
+}
 
 #ggplot customized theme function
 theme_ym <- function(data){
   data +
-    theme(strip.text.x = element_text(colour = "black", face = "bold", size = 18), legend.text = element_text(size = 12, face = "bold"), plot.title = element_text(hjust = 0.5, colour = "black", face = "bold", size = 18),
+    theme(strip.text.x = element_text(colour = "black", face = "bold", size = 18), legend.text = element_text(size = 12, face = "bold"), plot.title = element_text(hjust = 0.5, colour = "black", face = "bold", size = 36),
           legend.title = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank(), 
-          axis.text.y = element_text(color = "black", size = 12, face = "bold"), strip.text.y = element_text(colour = "black", face = "bold", size = 18), 
-          axis.text.x = element_text(colour = "black", size = 10, face = "bold", angle = 45, vjust = 0.5))
+          axis.text.y = element_text(color = "black", size = 28, face = "bold"), strip.text.y = element_text(colour = "black", face = "bold", size = 18), 
+          axis.text.x = element_text(colour = "black", size = 32, face = "bold", angle = 45, vjust = 0.5))
 }
 
 #all signals
@@ -859,10 +898,7 @@ for (i in seq_along(name_ML_stage_1_target_for_plot)) {
   write_delim(output_table, str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_1/", name_ML_stage_1_target_for_plot[[i]]), delim = "\t", col_names = TRUE)
   
   g <- process_the_Boruta_data(table_ready_for_ML_stage_1_target_boruta[[i]]) %>%
-    pivot_longer(everything()) %>%
-    mutate(mark = if_else(str_detect(name, "shadow")==TRUE, "shadowmarks", "marks")) %>%
-    ggplot(aes(x = fct_reorder(name, value, median), y = value)) +
-    geom_boxplot(aes(fill = mark)) +
+    plot_boruta() +
     ggtitle(name_ML_stage_1_target_for_plot[[i]])
   
   output_plot <- theme_ym(g)
@@ -874,22 +910,36 @@ for (i in seq_along(name_ML_stage_1_target_for_plot)) {
 
 #peaks
 #target
+temp_ml_s1_target <- list()
+
 for (i in seq_along(name_ML_stage_1_target_peaks_for_plot)) {
-  output_table <- process_the_Boruta_data(table_ready_for_ML_stage_1_peak_target_boruta[[i]])
-  write_delim(output_table, str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_1_peaks/", name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks"), delim = "\t", col_names = TRUE)
+  #output_table <- process_the_Boruta_data(table_ready_for_ML_stage_1_peak_target_boruta[[i]])
+  #write_delim(output_table, str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_1_peaks/", name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks"), delim = "\t", col_names = TRUE)
   
-  g <- process_the_Boruta_data(table_ready_for_ML_stage_1_peak_target_boruta[[i]]) %>%
-    pivot_longer(everything()) %>%
-    mutate(mark = if_else(str_detect(name, "shadow")==TRUE, "shadowmarks", "marks")) %>%
-    ggplot(aes(x = fct_reorder(name, value, median), y = value)) +
-    geom_boxplot(aes(fill = mark)) +
-    ggtitle(str_c(name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks")) 
+  #g <- process_the_Boruta_data(table_ready_for_ML_stage_1_peak_target_boruta[[i]]) %>%
+    #plot_boruta() +
+    #ggtitle(str_c(name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks")) 
+  
+  raw_table <- read_delim(str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_1_peaks/", name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks"), delim = "\t", col_names = TRUE)
+  
+  temp_ml_s1_target <- append(temp_ml_s1_target, list(raw_table))
+  g <- raw_table %>%
+  plot_boruta() +
+    ggtitle(str_c(name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks"))
   
   output_plot <- theme_ym(g)
+  
   
   ggsave(str_c("./analysis/AS_all_seg_ML_stage_1_peaks/", name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks.jpeg"), output_plot, width = 400, height = 240, units = c("mm"), dpi = 320)
   
 }
+
+bind_rows(temp_ml_s1_target) %>%
+  pivot_longer(everything()) %>%
+  group_by(name) %>%
+  summarise(q = mean(value)) %>%
+  arrange(q) %>%
+  View()
 
 #ctrl
 for (i in c(39)) {
@@ -916,6 +966,9 @@ regroup_ramdom_PSI_f <- function(data){
     mutate(type = str_c(type, "_", group)) %>%
     select(-type_2, -group)
 }
+
+str_locate_all(unique(table_ready_for_ML_raw_peak_target_sorted$A3S$HS6_HS0$PI_H$type), "_")
+regroup_ramdom_PSI_f(table_ready_for_ML_raw_peak_target_sorted$A3S$HS6_HS0$PI_H)
 
 #sort table_ready_for_ML_raw_peak_target_sorted into random PSI
 #target
@@ -949,7 +1002,7 @@ for (i in seq_along(AS_type)) {
     }
   }
 }
-
+name_pairwise_table_for_ML_stage_2_raw_target[[63]]
 for (i in seq_along(table_ready_for_ML_stage_2_raw_target)) {
   print(nrow(table_ready_for_ML_stage_2_raw_target[[i]]))
 }
@@ -960,23 +1013,35 @@ for (i in seq_along(table_ready_for_ML_stage_2_target_boruta)) {
   print(str_c("start boruta for the ", i, "th dataset"))
   table_ready_for_ML_stage_2_target_boruta[[i]] <- Boruta(type~., table_ready_for_ML_stage_2_raw_target[[i]], doTrace = 2)
 }
+table_ready_for_ML_stage_2_raw_target[[1]]
 
+str_split(name_pairwise_table_for_ML_stage_2_raw_target[[1]]$type, "_")
 
-for (i in seq_along(table_ready_for_ML_stage_2_target_boruta)) {
-  output_table <- process_the_Boruta_data(table_ready_for_ML_stage_2_target_boruta[[i]])
-  write_delim(output_table, str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_2_peaks/random_AS_PSI_peaks_", i), delim = "\t", col_names = TRUE)
+setdiff(name_pairwise_table_for_ML_stage_2_raw_target[[1]]$type[[1]],
+        name_pairwise_table_for_ML_stage_2_raw_target[[1]]$type[[2]])
+
+for (i in seq_along(name_pairwise_table_for_ML_stage_2_raw_target)) {
+  #output_table <- process_the_Boruta_data(table_ready_for_ML_stage_2_target_boruta[[i]])
+  #write_delim(output_table, str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_2_peaks/random_AS_PSI_peaks_", i), delim = "\t", col_names = TRUE)
   #print(str_c(i, "th boruta result"))
   #print(sum(attStats(table_ready_for_ML_stage_2_target_boruta[[i]])[,6]=="Rejected"))
-  g <- process_the_Boruta_data(table_ready_for_ML_stage_1_peak_target_boruta[[i]]) %>%
-    pivot_longer(everything()) %>%
-    mutate(mark = if_else(str_detect(name, "shadow")==TRUE, "shadowmarks", "marks")) %>%
-    ggplot(aes(x = fct_reorder(name, value, median), y = value)) +
-    geom_boxplot(aes(fill = mark)) +
-    ggtitle(str_c(name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks")) 
+  
+  title <- str_split(name_pairwise_table_for_ML_stage_2_raw_target[[i]]$type, "_")
+  print(str_c(title[[1]][[1]], "_", title[[1]][[2]], "_", title[[1]][[3]], "_sh", title[[1]][[5]], "_vs_sh", title[[2]][[5]]))
+  
+  title_f <- str_c(title[[1]][[1]], "_", title[[1]][[2]], "_", title[[1]][[3]], "_PI_sh", title[[1]][[5]], "_vs_PI_sh", title[[2]][[5]])
+  
+  g <- read_delim(str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_2_peaks/random_AS_PSI_peaks_", i), delim = "\t", col_names = TRUE) %>%
+    plot_boruta() +
+    ggtitle(str_c(title_f, "_peaks")) 
+
+    #g <- process_the_Boruta_data(table_ready_for_ML_stage_1_peak_target_boruta[[i]]) %>%
+    #plot_boruta() +
+    #ggtitle(str_c(name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks")) 
   
   output_plot <- theme_ym(g)
   
-  ggsave(str_c("./analysis/AS_all_seg_ML_stage_1_peaks/", name_ML_stage_1_target_peaks_for_plot[[i]], "_peaks.jpeg"), output_plot, width = 400, height = 240, units = c("mm"), dpi = 320)
+  ggsave(str_c("./analysis/AS_all_seg_ML_stage_2_peaks/", title_f, "_peaks.jpeg"), output_plot, width = 400, height = 240, units = c("mm"), dpi = 320)
   
 }
 
@@ -1032,10 +1097,7 @@ for (i in seq_along(table_ready_for_ML_raw_peak_s3_boruta)) {
   write_delim(output_table, str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_3_peaks/", name_table_ready_for_ML_raw_peak_s3[[i]], "_sig_vs_non_sig"), delim = "\t", col_names = TRUE)
   
   g <- process_the_Boruta_data(table_ready_for_ML_raw_peak_s3_boruta[[i]]) %>%
-  pivot_longer(everything()) %>%
-  mutate(mark = if_else(str_detect(name, "shadow")==TRUE, "shadowmarks", "marks")) %>%
-  ggplot(aes(x = fct_reorder(name, value, median), y = value)) +
-  geom_boxplot(aes(fill = mark)) +
+    plot_boruta() +
   ggtitle(str_c(name_table_ready_for_ML_raw_peak_s3[[i]], "_peaks_sig_vs_non_sig")) 
   
   output_plot <- theme_ym(g)
@@ -1248,10 +1310,7 @@ for (i in seq_along(table_ready_for_ML_raw_peak_s4_boruta)) {
   write_delim(output_table, str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_4_peaks/", names_output), delim = "\t", col_names = TRUE)
   
   g <- process_the_Boruta_data(table_ready_for_ML_raw_peak_s4_boruta[[i]]) %>%
-    pivot_longer(everything()) %>%
-    mutate(mark = if_else(str_detect(name, "shadow")==TRUE, "shadowmarks", "marks")) %>%
-    ggplot(aes(x = fct_reorder(name, value, median), y = value)) +
-    geom_boxplot(aes(fill = mark)) +
+    plot_boruta() +
     ggtitle(names_output) 
   
   output_plot <- theme_ym(g)
@@ -1305,10 +1364,7 @@ for (i in seq_along(table_ready_for_ML_raw_peak_s4_boruta_v2)) {
   write_delim(output_table, str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_4_peaks/", names_output), delim = "\t", col_names = TRUE)
   
   g <- process_the_Boruta_data(table_ready_for_ML_raw_peak_s4_boruta_v2[[i]]) %>%
-    pivot_longer(everything()) %>%
-    mutate(mark = if_else(str_detect(name, "shadow")==TRUE, "shadowmarks", "marks")) %>%
-    ggplot(aes(x = fct_reorder(name, value, median), y = value)) +
-    geom_boxplot(aes(fill = mark)) +
+    plot_boruta() +
     ggtitle(names_output) 
   
   output_plot <- theme_ym(g)
@@ -1342,6 +1398,226 @@ test_exon_data_for_ML_temp_l_small <- test_exon_data_for_ML_temp_l[1:10]
 test_exon_data_for_ML_temp_l_small %>%
   map(. %>% make_AS_ML_data_f(., c("HS1_HS0"), c("PI_H"))) %>%
   bind_rows()
+
+#stage 5 external ctrl
+#the logic here is to simulate previous ML using shuffled PSI
+#So I made 5 subgroups of external ctrl in the part of #gene without AS
+#Then, I can make ten pairwise comparisons
+
+#stage 5 v1, external ctrl vs external ctrl
+#produce ML data of external ctrl
+names_exon_intron_data_for_ML_f_ex_ctrl <- str_c("segment_for_ML_sh", seq(1:5), "_ex_ctrl")
+
+#add the label of three and five prime side of each external ctrl segment
+exon_intron_data_for_ML_f_ex_ctrl_l <- exon_intron_data_for_ML_f_ex_ctrl %>%
+  map(. %>% mutate(order_t = c(1:n()))) 
+
+exon_intron_data_for_ML_f_ex_ctrl_size_l <- 
+  exon_intron_data_for_ML_f_ex_ctrl_l %>% 
+  map(., feature_size_f)
+
+#import and calculate the intersection between external ctrl and each histone modification marks
+#and merge them into one table for each external ctrl subgroup sample
+for (i in seq_along(exon_intron_data_for_ML_f_ex_ctrl_l)) {
+  #generate the list with 19 files of feature size
+  feature_size_list <- exon_intron_data_for_ML_f_ex_ctrl_size_l[[i]][rep(1:nrow(exon_intron_data_for_ML_f_ex_ctrl_size_l[[i]]),19),] %>%
+    mutate(list_group = rep(c(1:19), each = nrow(exon_intron_data_for_ML_f_ex_ctrl_size_l[[i]]))) %>%
+    split(.$list_group)
+  
+  #generate the RPKM file for each "exon_intron_data_for_ML_f_ex_ctrl" based on peaks
+  RPKM_list <-
+    pmap(list(seq(1:19), rep("_p0.05_peaks_pileup_", 19), 
+              rep(names_exon_intron_data_for_ML_f_ex_ctrl[[i]], 19), feature_size_list), 
+         histone_RPKM_f) %>%
+    reduce(., full_join)
+  
+  #produce the output file ready for ML
+  ready_ML <- exon_intron_data_for_ML_f_ex_ctrl_l[[i]] %>%
+    left_join(RPKM_list) %>%
+    select(-order_t)
+  
+  write_delim(ready_ML, str_c("./data/AS_bed_for_ML/all_segments/table_ready_p005_peaks_pileup_", str_remove(names_exon_intron_data_for_ML_f_ex_ctrl[[i]], "segment_")),
+              delim = "\t", col_names = TRUE)
+}
+
+#import ML ready data and merge them into the form for pairwise comparison
+table_ready_for_ML_stage_5_ex_ctrl_raw <- list()
+name_table_ready_for_ML_stage_5_ex_ctrl_raw <- c()
+
+for (i in seq_along(names_exon_intron_data_for_ML_f_ex_ctrl)) {
+  path_RPKM_AS_all_seg <- str_c("./data/AS_bed_for_ML/all_segments/table_ready_p005_peaks_pileup_", str_remove(names_exon_intron_data_for_ML_f_ex_ctrl[[i]], "segment_"))
+  
+  a <- read_delim(path_RPKM_AS_all_seg, delim = "\t") %>%
+    replace_na(list(Pol2_RPKM = 0, H3K14ac_RPKM = 0, H3K4ac_RPKM = 0, K18ac_RPKM = 0, K27ac_RPKM = 0,
+                    K27me3_RPKM = 0, K4me1_RPKM = 0, K4me3_RPKM = 0, K9ac_RPKM = 0, H3K36me3_RPKM = 0,
+                    H3K79ac_RPKM = 0, H4K12ac_RPKM = 0, H4K16ac_RPKM = 0, H4K20ac_RPKM = 0, H4K5ac_RPKM = 0,
+                    H4K8ac_RPKM = 0, K36ac_RPKM = 0, K4me2_RPKM = 0, K56ac_RPKM = 0)) %>%
+    mutate(type = as.factor(str_c(pair, "_", PI)))
+  
+  
+  raw_table <- a[c(ncol(a)-19):ncol(a)]
+  
+  table_ready_for_ML_stage_5_ex_ctrl_raw <- append(table_ready_for_ML_stage_5_ex_ctrl_raw, list(raw_table))
+  name_table_ready_for_ML_stage_5_ex_ctrl_raw <- append(name_table_ready_for_ML_stage_5_ex_ctrl_raw, raw_table$type[[1]])
+}
+
+comb_pair_AS_seg_type <- combs(c(1:5), 2) #five sh external type
+
+table_ready_for_ML_stage_5_ex_ctrl <- list()
+name_table_ready_for_ML_stage_5_ex_ctrl <- list()
+
+for (i in seq_along(comb_pair_AS_seg_type[,1])) {
+  
+  a <- table_ready_for_ML_stage_5_ex_ctrl_raw[comb_pair_AS_seg_type[i,]] %>%
+    bind_rows()
+  
+  type_check <- a %>%
+    select(type) %>%
+    unique()
+  
+  print(type_check)
+  
+  a <- a %>%
+    as.data.frame()
+  
+  table_ready_for_ML_stage_5_ex_ctrl <- append(table_ready_for_ML_stage_5_ex_ctrl, list(a))
+  name_table_ready_for_ML_stage_5_ex_ctrl <- append(name_table_ready_for_ML_stage_5_ex_ctrl, list(type_check))
+}
+
+#run boruta
+table_ready_for_ML_stage_5_ex_ctrl_boruta <- vector("list", length = length(table_ready_for_ML_stage_5_ex_ctrl))
+
+for (i in seq_along(table_ready_for_ML_stage_5_ex_ctrl_boruta)) {
+  print(str_c("start boruta for the ", i, "th dataset"))
+  table_ready_for_ML_stage_5_ex_ctrl_boruta[[i]] <- Boruta(type~., table_ready_for_ML_stage_5_ex_ctrl[[i]], doTrace = 2)
+}
+
+#since the result showed the these 5 external ctrl subgroups are not the same
+#I combined them together as the whole external ctrl, and compared it with df PSI target
+table_ready_for_ML_stage_5_ex_ctrl_combined <- bind_rows(table_ready_for_ML_stage_5_ex_ctrl_raw) %>%
+  mutate(type = as.factor("external_ctrl"))
+
+
+table_ready_for_ML_stage_5_raw_target <- list()
+name_pairwise_table_for_ML_stage_5_raw_target <- c()
+
+for (i in seq_along(AS_type)) {
+  for (j in seq_along(comp)) {
+    for (k in seq_along(PI_type)) {
+      #combine df PSI and external ctrl
+      a <- bind_rows(table_ready_for_ML_raw_peak_target_sorted[[i]][[j]][[k]], 
+                     table_ready_for_ML_stage_5_ex_ctrl_combined)
+      
+      a <- a %>%
+        as.data.frame()
+      
+      #produce the name for the following output and ggplot title
+      name_a <- str_c(table_ready_for_ML_raw_peak_target_sorted[[i]][[j]][[k]]$type[[1]], "_vs_", "external_ctrl")
+      
+      #append data with df and external ctrl into a list
+      table_ready_for_ML_stage_5_raw_target <- append(table_ready_for_ML_stage_5_raw_target, list(a))
+      
+      #append names into a vector
+      name_pairwise_table_for_ML_stage_5_raw_target <- append(name_pairwise_table_for_ML_stage_5_raw_target, name_a)
+    }
+  }
+}
+
+#run boruta for df PSI and external ctrl
+table_ready_for_ML_stage_5_PSI_vs_ex_ctrl_boruta <- vector("list", length = length(table_ready_for_ML_stage_5_raw_target))
+
+for (i in seq_along(table_ready_for_ML_stage_5_PSI_vs_ex_ctrl_boruta)) {
+  print(str_c("start boruta for the ", i, "th dataset", "for ", name_pairwise_table_for_ML_stage_5_raw_target[[i]]))
+  table_ready_for_ML_stage_5_PSI_vs_ex_ctrl_boruta[[i]] <- Boruta(type~., table_ready_for_ML_stage_5_raw_target[[i]], doTrace = 2)
+}
+
+#write the boruta output file and plots
+for (i in seq_along(name_pairwise_table_for_ML_stage_5_raw_target)) {
+  output_table <- process_the_Boruta_data(table_ready_for_ML_stage_5_PSI_vs_ex_ctrl_boruta[[i]])
+  write_delim(output_table, str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_5_peaks/", name_pairwise_table_for_ML_stage_5_raw_target[[i]]), delim = "\t", col_names = TRUE)
+  
+  g <- process_the_Boruta_data(table_ready_for_ML_stage_5_PSI_vs_ex_ctrl_boruta[[i]]) %>%
+    plot_boruta() +
+    ggtitle(name_pairwise_table_for_ML_stage_5_raw_target[[i]])
+  
+  output_plot <- theme_ym(g)
+  
+  ggsave(str_c("./analysis/AS_all_seg_ML_s5_peaks/", name_pairwise_table_for_ML_stage_5_raw_target[[i]], ".jpeg"), output_plot, width = 400, height = 240, units = c("mm"), dpi = 320)
+  
+}
+
+table_ready_for_ML_stage_5_PSI_vs_ex_ctrl_boruta %>%
+  map(. %>% process_the_Boruta_data()) %>%
+  bind_rows() %>%
+  pivot_longer(everything()) %>%
+  group_by(name) %>%
+  summarise(q = mean(value)) %>%
+  arrange(q) %>%
+  View()
+
+#stage 6 target vs internal ctrl
+table_ready_for_ML_stage_6_raw_peak_target <- list()
+name_pairwise_table_for_ML_stage_6_raw_peak_target <- list()
+table_ready_for_ML_raw_peak_target_sorted[[1]][[1]][[2]]$type[[1]]
+table_ready_for_ML_raw_peak_ctrl_sorted[[1]][[1]][[2]]$type[[1]]
+PI_type
+
+for (i in seq_along(AS_type)) {
+  for (j in seq_along(comp)) {
+    for (k in seq_along(PI_type)) {
+      a <- table_ready_for_ML_raw_peak_target_sorted[[i]][[j]][[k]]
+      b <- table_ready_for_ML_raw_peak_ctrl_sorted[[i]][[j]][[k]]
+      
+      c <- bind_rows(a, b)
+      
+      type_check <- c %>%
+        select(type) %>%
+        unique()
+      print(type_check)
+      c <- c %>%
+        as.data.frame()
+      table_ready_for_ML_stage_6_raw_peak_target <- append(table_ready_for_ML_stage_6_raw_peak_target, list(c))
+      name_pairwise_table_for_ML_stage_6_raw_peak_target <- append(name_pairwise_table_for_ML_stage_6_raw_peak_target, list(type_check))
+    }
+  }
+}
+
+
+
+
+
+unique(table_ready_for_ML_stage_1_raw_peak_ctrl[[1]]$type)
+
+table_ready_for_ML_stage_6_raw_peak_boruta <- vector("list", length = length(table_ready_for_ML_stage_6_raw_peak_target))
+
+for (i in seq_along(table_ready_for_ML_stage_6_raw_peak_target)) {
+  print(str_c("start boruta for the ", i, "th dataset"))
+  table_ready_for_ML_stage_6_raw_peak_boruta[[i]] <- Boruta(type~., table_ready_for_ML_stage_6_raw_peak_target[[i]], doTrace = 2)
+}
+
+#write the boruta output file and plots
+for (i in seq_along(name_pairwise_table_for_ML_stage_5_raw_target)) {
+  output_table <- process_the_Boruta_data(table_ready_for_ML_stage_6_raw_peak_boruta[[i]])
+  write_delim(output_table, str_c("./data/AS_bed_for_ML/all_segments/ML_results_table_stage_6_peaks/", name_pairwise_table_for_ML_stage_6_raw_peak_target[[i]]$type[[1]], "_vs_internal_ctrl"), delim = "\t", col_names = TRUE)
+  
+  g <- process_the_Boruta_data(table_ready_for_ML_stage_6_raw_peak_boruta[[i]]) %>%
+    plot_boruta() +
+    ggtitle(str_c(name_pairwise_table_for_ML_stage_6_raw_peak_target[[i]]$type[[1]], "_vs_internal_ctrl"))
+  
+  output_plot <- theme_ym(g)
+  
+  ggsave(str_c("./analysis/AS_all_seg_ML_s6_peaks/", name_pairwise_table_for_ML_stage_6_raw_peak_target[[i]]$type[[1]], "_vs_internal_ctrl.jpeg"), output_plot, width = 400, height = 240, units = c("mm"), dpi = 320)
+  
+}
+
+table_ready_for_ML_stage_6_raw_peak_boruta %>%
+  map(. %>% process_the_Boruta_data) %>%
+  bind_rows() %>%
+  pivot_longer(everything()) %>%
+  group_by(name) %>%
+  summarise(mean = mean(value)) %>%
+  arrange(-mean)
+
 
 #This is to check the median size of genes containing AS sig or non sig
 read_delim("./data/Intersected_AS_TPM_q05_M82_anno_rMATs/AS_control_TPM_q05_HS1_HS0_SE_intersected_M82_rMATs_exon_order.bed", delim = "\t", 
