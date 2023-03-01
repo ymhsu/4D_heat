@@ -3,6 +3,12 @@ Sys.setenv(LANG = "en_US.UTF-8")
 Packages <- c("plyranges", "tidyverse", "doParallel", "foreach", "nullranges", "caTools", "ggpubr", "fs", "HelloRanges")
 lapply(Packages, library, character.only = TRUE)
 
+#Previously, our analysis focused on three regions (100-bp upstream/downstream junctions of exon/intron containing AS),
+#Since We are more interested in the whole cassettes (intron-AS-included-exon-intron or exon-AS-included-intron-exon)
+#We will modify how to define the group of upstream_gr and downstream_gr here
+#Plus, we also include the DAS gene analysis, so we will extract the information of DAS gene first.
+#Then the DAS info will be used to filter out PSI_all and control groups to keep these two groups containing only PSI-stable or constitutively splicing genes in response to heat
+
 #import the file of refined DAS genes
 All_DAS_events_all_comparisons_refined <-
   read_delim("./data/rMATS_out/All_DAS_events_all_comparisons_refined.tsv", delim = "\t", col_names = TRUE) 
@@ -47,20 +53,21 @@ search_for_strand_DAS_gene <- function(data){
   M82_rMATs_anno_all_gene %>%
     filter(str_detect(gene_name, data)) %>%
     mutate(gene_name_f = data) %>%
-    select(GeneID = gene_name_f, strand) %>%
+    dplyr::select(GeneID = gene_name_f, strand) %>%
     distinct()
 }
 
-
+#create the table of DAS genes with their strand information
 DAS_geneID_strand <- 
   map(DAS_geneID, search_for_strand_DAS_gene) %>%
   bind_rows()
 
 
+
 #extract chromosome info for all DAS gene
 DAS_geneID_chr <- 
   All_DAS_events_all_comparisons_refined %>%
-  select(GeneID) %>%
+  dplyr::select(GeneID) %>%
   mutate(chr_modified = str_remove(GeneID, "g.*")) %>%
   mutate(chr_modified = str_remove(chr_modified, "_NP.*")) %>%
   mutate(chr_modified = str_remove(chr_modified, "Solyc_")) %>%
@@ -68,6 +75,7 @@ DAS_geneID_chr <-
   mutate(chr_modified = str_replace(chr_modified, "Solyc", "chr")) %>%
   filter(str_detect(GeneID, "Tomato")!=TRUE) %>%
   distinct()
+
 
 All_DAS_events_all_comparisons_refined_raw <-   
 All_DAS_events_all_comparisons_refined %>%
@@ -85,7 +93,7 @@ All_DAS_events_all_comparisons_refined %>%
                                if_else(AS_type == "A3S" & strand == "+", pos_3,
                                        if_else(AS_type == "A3S" & strand == "-", pos_2, 
                                                if_else(AS_type == "SE", pos_2, pos_5)))))) %>%
-  select(chr = chr_modified, str, end, strand, AS_type, comp, IncLevel1, IncLevel2, Incdf)
+  dplyr::select(chr = chr_modified, str, end, strand, AS_type, comp, IncLevel1, IncLevel2, Incdf)
 
 write_delim(All_DAS_events_all_comparisons_refined_raw, "./data/temp/All_DAS_events_all_comparisons_refined_raw", delim = "\t", col_names = TRUE)
 
@@ -120,7 +128,7 @@ All_DAS_events_all_comparisons_refined_for_granges %>%
 #and stored the refined HS0 data in another subfolder
 AS_type_bootstrap <- c("RI", "SE")
 PSI_type_bootstrap <- c(str_c("PSI_", c("5", "5_20", "20_40", "40_60","60_80", "80_95", "95")), "PSI_all", "ctrl")
-location_gr <- c("upstream_feature_gr", "feature_gr", "downstream_feature_gr")
+location_gr_AS_included_body <- c("feature_gr")
 
 registerDoParallel(cores = 5)
 getDoParWorkers()
@@ -236,44 +244,79 @@ for (i in seq_along(heat_trt)) {
 
 names(list_gr_mark_heat_trt) <- names_list_gr_mark_heat_trt
 
+#Based on 1000 bootstrapped samples previously produced in coenrichment analysis for only HS0 events
+#we focused on feature_gr only to combined them in one sample for following analysis
 #test for one sample combined by 100 bootstrap samples for producing histograms (enrichment analysis for single mark or co-enrichment analysis for multiple marks)
 AS_type_bootstrap <- c("RI", "SE")
 PSI_type_simplified <- c("PSI_all", "ctrl")
-location_gr <- c("upstream_feature_gr", "feature_gr", "downstream_feature_gr")
+location_gr_AS_included_body <- c("feature_gr")
 
 registerDoParallel(cores = 5)
 getDoParWorkers()
 
-PSI_DAS_removed_1_100_list <- 
+PSI_DAS_removed_1_1000_list <- 
 foreach(i=seq_along(AS_type_bootstrap), .packages = c("plyranges", "tidyverse")) %:%
   foreach(j=seq_along(PSI_type_simplified), .packages = c("plyranges", "tidyverse")) %:%
-  foreach(l=seq_along(location_gr), .packages = c("plyranges", "tidyverse")) %:%
-  foreach(k=1:100, .packages = c("plyranges", "tidyverse")) %dopar% {
+  foreach(l=seq_along(location_gr_AS_included_body), .packages = c("plyranges", "tidyverse")) %:%
+  foreach(k=1:1000, .packages = c("plyranges", "tidyverse")) %dopar% {
     
-    bt_sample_output_path <- str_c("./data/AS_HS0_bootstrap_samples_DAS_removed/", AS_type_bootstrap[[i]], "_", PSI_type_simplified[[j]], "_", location_gr[[l]], "_bootstrap_DAS_removed_", k)
+    bt_sample_output_path <- str_c("./data/AS_HS0_bootstrap_samples_DAS_removed/", AS_type_bootstrap[[i]], "_", PSI_type_simplified[[j]], "_", location_gr_AS_included_body[[l]], "_bootstrap_DAS_removed_", k)
     
     read_delim(bt_sample_output_path, delim = "\t", col_names = TRUE)
     
   }
 
-#combined 1-100 bootstrapped samples into one sample
+#combined 1-1000 bootstrapped samples into one sample
 PSI_DAS_removed_reduced <- 
-PSI_DAS_removed_1_100_list %>%
+PSI_DAS_removed_1_1000_list %>%
   map(. %>% map(. %>% map(. %>% Reduce(bind_rows, .)))) %>%
   map(. %>% map(. %>% map(. %>% distinct())))
 
-#generate the output for combined bootstrapped samples with 1-100 bootstraping samples
+#generate the output for combined bootstrapped samples with 1-1000 bootstraping samples
 for (i in seq_along(AS_type_bootstrap)) {
   for (j in seq_along(PSI_type_simplified)) {
-    for (l in seq_along(location_gr)) {
+    for (l in seq_along(location_gr_AS_included_body)) {
       
-      path_output <- str_c("./data/AS_HS0_bootstrap_samples_DAS_removed/", AS_type_bootstrap[[i]], "_", PSI_type_simplified[[j]], "_", location_gr[[l]], "_bootstrap_DAS_removed_1_100_combined")
+      path_output <- str_c("./data/AS_HS0_bootstrap_samples_DAS_removed/", AS_type_bootstrap[[i]], "_", PSI_type_simplified[[j]], "_", location_gr_AS_included_body[[l]], "_bootstrap_DAS_removed_1_1000_combined")
       
       write_delim(PSI_DAS_removed_reduced[[i]][[j]][[l]], path_output, delim = "\t", col_names = TRUE)
       
     }
   }
 }
+
+#import all exons and introns of annotation data for extracting upstream/downstream AS-included intron/exon
+#and extract DAS exons and introns
+#import all exons
+M82_rMATs_anno_all_exon <-
+  read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_exon.bed", col_names = c("seqnames", "start", "end", "strand", "feature", "source", "gene_name")) %>%
+  filter(strand == "+" | strand == "-")
+
+M82_rMATs_anno_all_exon %>%
+  summarise(median_exon = median(end-start))
+
+
+#import all introns
+M82_rMATs_anno_all_intron <-
+  read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_intron.bed", col_names = c("seqnames", "start", "end", "strand", "feature", "source", "gene_name"))
+
+M82_rMATs_anno_all_intron %>%
+  summarise(median_intron = median(end-start))
+
+
+#combine the annotation data of intron and exon
+M82_rMATs_anno_all_intron_exon_ordered <- 
+  bind_rows(M82_rMATs_anno_all_exon, M82_rMATs_anno_all_intron) %>%
+  arrange(gene_name, seqnames, start) %>%
+  group_by(gene_name) %>%
+  mutate(genetic_feature_label = c(1:n()))
+
+write_delim(M82_rMATs_anno_all_intron_exon_ordered, "./data/M82_annotation_data/M82_rMATs_anno_all_intron_exon_ordered.bed", delim = "\t", col_names = TRUE)
+
+PSI_DAS_removed_reduced[[1]][[1]][[1]] %>%
+  left_join(M82_rMATs_anno_all_intron_exon_ordered)
+  
+  
 
 #import DAS for extracting introns or exons with AS with following analysis
 All_DAS_events_all_comparisons_refined_for_granges <- 
@@ -283,21 +326,6 @@ All_DAS_events_all_comparisons_refined_for_granges <-
   map(. %>% split(.$comp)) %>%
   map(. %>% map(. %>% split(.$more_AS)))
 
-#import all exons
-M82_rMATs_anno_all_exon <-
-  read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_exon.bed", col_names = c("seqnames", "start", "end", "strand", "feature", "source", "gene_name")) %>%
-  filter(strand == "+" | strand == "-")
-
-M82_rMATs_anno_all_exon %>%
-  summarise(median_exon = median(end-start))
-  
-
-#import all introns
-M82_rMATs_anno_all_intron <-
-  read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_intron.bed", col_names = c("seqnames", "start", "end", "strand", "feature", "source", "gene_name"))
-
-M82_rMATs_anno_all_intron %>%
-  summarise(median_intron = median(end-start))
 
 #create the function that extracts introns or exons with AS (RI or SE)
 produce_feature_with_AS <-
@@ -415,6 +443,12 @@ for (i in seq_along(AS_type_focused)) {
 
 names(list_gr_raw_comp_AS_HS0_DAS_heat_trt) <- names_list_gr_raw_comp_AS_HS0_DAS_heat_trt
 
+join_overlap_intersect(list_gr_raw_comp_AS_HS0_DAS_heat_trt[[11]], list_gr_raw_comp_AS_HS0_DAS_heat_trt[[13]])
+
+list_gr_raw_comp_AS_HS0_DAS_heat_trt[[11]] %>%
+  GenomicRanges::reduce(., ignore.strand = TRUE)
+
+?reduce
 #check the size of introns/exons for different groups
 list_gr_raw_comp_AS_HS0_DAS_heat_trt %>%
   map(. %>% as_tibble()) %>%
