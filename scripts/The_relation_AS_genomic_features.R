@@ -438,6 +438,9 @@ histone_mark_list_m <- histone_mark_list %>%
   mutate(name_light = str_remove_all(name_raw, "0h_")) %>%
   mutate(name_light = str_remove_all(name_light, "_.*"))
 
+histone_mark_list_m %>%
+  arrange(-read_count)
+
 #2.import all segments of exon/intron as the anchor for the following tables
 #necessary for producing datasets for running ML
 comp = c("HS6_HS0", "HS1_HS0", "HS1_HS6")
@@ -464,6 +467,11 @@ for (i in seq_along(comp)) {
     }
   }
 }
+
+read_delim(str_c("./data/AS_bed_for_ML/segment_for_ML_", comp[[1]], "_", PI_type[[1]], "_", AS_type[[1]], "_", target[[1]], ".bed"), delim = "\t",
+           col_names = c("chr", "str", "end", "strand", "feature", "source", "anno", "order", "comp", "AS", "PI", "event", "pair", "seg_side")) %>%
+  #the reason to have order_t is to separate five and three end of the same gene for taking the information of histone modification marks
+  mutate(order_t = c(1:n()))
 
 length(AS_exon_intron_sig_no_event_l)
 AS_exon_intron_sig_no_event_l[[1]]

@@ -427,8 +427,17 @@ unique_segments_AS_and_intctrl_f <- function(data, a){
     drop_na() %>%
     mutate(PI = if_else(AS == "no", a[1], PI)) %>%
     select(chr, str, end, strand, trt, AS, PI) %>%
-    distinct()
+    distinct() %>%
+    mutate(seg_size = end - str, order_t = str_c(PI, "_segment_", c(1:n())))
 }
+
+AS_SE_for_ML_list[[1]] %>%
+  bind_rows()  %>%
+  drop_na() %>%
+  mutate(PI = if_else(AS == "no", PI_type[[1]], PI))%>%
+  select(chr, str, end, strand, trt, AS, PI) %>%
+  distinct() %>%
+  mutate(seg_size = end - str, order_t = str_c("_segment_", c(1:n())))
 
 #create unique segments of AS events and their internal controls
 unique_seg_AS_SE_for_ML_list <- vector("list", length = length(PI_type))
@@ -472,7 +481,7 @@ bind_rows(data, data) %>%
   mutate(end_n = if_else(strand == "+" & side == "five", str,
                          if_else(strand == "+" & side == "three", end + 100,
                                  if_else(strand == "-" & side == "five", end + 100, str)))) %>%
-  select(chr, str = str_n, end = end_n, strand, trt, AS, PI, seg_side = side) %>%
+  select(chr, str = str_n, end = end_n, strand, trt, AS, PI, seg_side = side, seg_size, order_t) %>%
   arrange(chr, str)
 }
 
@@ -503,3 +512,5 @@ AS_SE_100bp_extention_l %>%
 
 lapply(AS_RI_100bp_extention_l, producing_output_100bp_extentions_f)
 
+AS_RI_100bp_extention_l[[1]]
+length(AS_RI_100bp_extention_l)
