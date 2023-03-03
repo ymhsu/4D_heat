@@ -7,7 +7,8 @@ lapply(Packages, library, character.only = TRUE)
 #Since We are more interested in the whole cassettes (intron-AS-included-exon-intron or exon-AS-included-intron-exon)
 #We will modify how to define the group of upstream_gr and downstream_gr here
 #Plus, we also include the DAS gene analysis, so we will extract the information of DAS gene first.
-#Then the DAS info will be used to filter out PSI_all and control groups to keep these two groups containing only PSI-stable or constitutively splicing genes in response to heat
+#Then the DAS info will be used to filter out PSI_all and control groups to keep these two groups containing only PSI-stable or constitutively splicedgenes in response to heat treatment
+#Since this task is focusing on DAS, I only use 5 epigenetic marks that we have under heat treatment for the analysis
 
 #import the file of refined DAS genes
 All_DAS_events_all_comparisons_refined <-
@@ -49,20 +50,21 @@ M82_rMATs_anno_all_gene <-
 DAS_geneID <- unique(All_DAS_events_all_comparisons_refined$GeneID)
 
 #Create the function that can use the content in the DAS-gene-ID vector for producing a table
-search_for_strand_DAS_gene <- function(data){
+search_for_strand_DAS_gene <- function(a){
   M82_rMATs_anno_all_gene %>%
-    filter(str_detect(gene_name, data)) %>%
-    mutate(gene_name_f = data) %>%
+    filter(str_detect(gene_name, a[1])) %>%
+    mutate(gene_name_f = a[1]) %>%
     dplyr::select(GeneID = gene_name_f, strand) %>%
     distinct()
 }
+
+#test the function above
+search_for_strand_DAS_gene(DAS_geneID[[1]])
 
 #create the table of DAS genes with their strand information
 DAS_geneID_strand <- 
   map(DAS_geneID, search_for_strand_DAS_gene) %>%
   bind_rows()
-
-
 
 #extract chromosome info for all DAS gene
 DAS_geneID_chr <- 
@@ -76,7 +78,7 @@ DAS_geneID_chr <-
   filter(str_detect(GeneID, "Tomato")!=TRUE) %>%
   distinct()
 
-
+#define str and end of DAS 
 All_DAS_events_all_comparisons_refined_raw <-   
 All_DAS_events_all_comparisons_refined %>%
   left_join(DAS_geneID_strand) %>%
@@ -97,6 +99,7 @@ All_DAS_events_all_comparisons_refined %>%
 
 write_delim(All_DAS_events_all_comparisons_refined_raw, "./data/temp/All_DAS_events_all_comparisons_refined_raw", delim = "\t", col_names = TRUE)
 
+#extract inclusion levels of DAS
 IncLevel_two_trts_rep_table <- 
   tibble(
   IncLevel1_r1 = as.double(str_split(All_DAS_events_all_comparisons_refined_raw$IncLevel1, ",", simplify = TRUE)[,1]),
@@ -105,6 +108,7 @@ IncLevel_two_trts_rep_table <-
   IncLevel2_r2 = as.double(str_split(All_DAS_events_all_comparisons_refined_raw$IncLevel2, ",", simplify = TRUE)[,2])
 )
 
+#produce the table for granges
 All_DAS_events_all_comparisons_refined_for_granges <- 
 All_DAS_events_all_comparisons_refined_raw %>%
   bind_cols(IncLevel_two_trts_rep_table) %>%
@@ -123,9 +127,9 @@ write_delim(All_DAS_events_all_comparisons_refined_for_granges, "./data/temp/All
 All_DAS_events_all_comparisons_refined_for_granges %>%
   as_granges()
 
-
-#import bootstraped data under HS0 condition, and remove DAS genes from these data
-#and stored the refined HS0 data in another subfolder
+#-----delete this part-----#
+#import bootstrap samples under HS0 condition, and remove DAS genes from these samples
+#and stored the refined HS0 bootstrap samples in another sub-folder
 AS_type_bootstrap <- c("RI", "SE")
 PSI_type_bootstrap <- c(str_c("PSI_", c("5", "5_20", "20_40", "40_60","60_80", "80_95", "95")), "PSI_all", "ctrl")
 location_gr_AS_included_body <- c("feature_gr")
@@ -157,95 +161,11 @@ foreach(i=seq_along(AS_type_bootstrap), .packages = c("plyranges", "tidyverse"))
     write_delim(bt_sample_output, bt_sample_output_path, delim = "\t", col_names = TRUE)
     
   }
+#AS_DAS_refined_bootstrap_samples
+#-----delete this part-----#
 
-
-
-#install HelloRanges
-if (!require("BiocManager", quietly = TRUE))
-  install.packages("BiocManager")
-BiocManager::install(version = "3.16")
-
-BiocManager::install("HelloRanges")
-library(HelloRanges)
-
-#merge peaks of epigenetic marks with two replicates 
-mark_with_more_reps <- c("Pol2", "H3K4me3")
-heat_trt <- c("0H", "1H", "6H")
-
-#make function for merging marks with two reps
-merge_rep_epimark <- 
-function(a, b){
-path_peak <-
-  str_c("./data/peak_epimarks/heat_trt/M82_", a[1], "_", b[1], "_rep", c(1,2), "_p0.05_peaks.bed")
-
-mark_r1 <- 
-  read_delim(path_peak[[1]], delim = "\t", col_names = c("chr", "str", "end", "signal"))
-
-mark_r2 <- 
-  read_delim(path_peak[[2]], delim = "\t", col_names = c("chr", "str", "end", "signal"))
-
- 
-bind_rows(mark_r1, mark_r2) %>%
-  arrange(chr, str) %>%
-  dplyr::select(seqnames = chr, start = str, end, signal) %>%
-  as_granges() %>%
-  GenomicRanges::reduce()
-}
-
-
-#make the output of merged epigenetic marks
-for (i in seq_along(heat_trt)) {
-  for (j in seq_along(mark_with_more_reps)) {
-    
-    merge_mark <- merge_rep_epimark(heat_trt[[i]], mark_with_more_reps[[j]])
-    
-    merge_mark <- merge_mark %>%
-      as_tibble() %>%
-      dplyr::select(-width, -strand) %>%
-      mutate(signal = 0)
-    
-    write_delim(merge_mark, str_c("./data/peak_epimarks/heat_trt/M82_", heat_trt[[i]], "_", mark_with_more_reps[[j]], "_merged_p0.05_peaks.bed"),
-                 delim = "\t", col_names = FALSE)
-    
-  }
-}
-
-mark_heat_trt <- c("H3K9ac", "H3K18ac", "H3K27ac", "Pol2", "H3K4me3")
-list_gr_mark_heat_trt <- list()
-names_list_gr_mark_heat_trt <- c()
-
-
-#import the files of epigenetic marks under heat treatments
-for (i in seq_along(heat_trt)) {
-  for (j in seq_along(mark_heat_trt)) {
-    
-    if(sum(str_detect(mark_with_more_reps, mark_heat_trt[[j]]))==0){
-      input_gr_mark <- read_delim(str_c("./data/peak_epimarks/heat_trt/M82_", heat_trt[[i]], "_", mark_heat_trt[[j]], "_rep1_p0.05_peaks.bed"), 
-                                                 delim = "\t", col_names = c("seqnames", "start", "end", "signal")) %>%
-        as_granges()
-      
-      list_gr_mark_heat_trt <- append(list_gr_mark_heat_trt, list(input_gr_mark))
-      
-      names_list_gr_mark_heat_trt <- append(names_list_gr_mark_heat_trt, str_c(heat_trt[[i]], "_", mark_heat_trt[[j]]))
-      
-    } else {
-      input_gr_mark <- read_delim(str_c("./data/peak_epimarks/heat_trt/M82_", heat_trt[[i]], "_", mark_heat_trt[[j]], "_merged_p0.05_peaks.bed"), 
-                                                 delim = "\t", col_names = c("seqnames", "start", "end", "signal")) %>%
-        as_granges()
-      
-      list_gr_mark_heat_trt <- append(list_gr_mark_heat_trt, list(input_gr_mark))
-      
-      names_list_gr_mark_heat_trt <- append(names_list_gr_mark_heat_trt, str_c(heat_trt[[i]], "_", mark_heat_trt[[j]]))
-      
-    }
-    
-  }
-}
-
-names(list_gr_mark_heat_trt) <- names_list_gr_mark_heat_trt
-
-#Based on 1000 bootstrapped samples previously produced in coenrichment analysis for only HS0 events
-#we focused on feature_gr only to combined them in one sample for following analysis
+#Based on 1000 bootstrap samples previously produced in co-enrichment analysis for only HS0 events
+#we focused only on feature_gr to combine them in one sample from which I extract their upstream and downstream genomic features
 #test for one sample combined by 100 bootstrap samples for producing histograms (enrichment analysis for single mark or co-enrichment analysis for multiple marks)
 AS_type_bootstrap <- c("RI", "SE")
 PSI_type_simplified <- c("PSI_all", "ctrl")
@@ -266,7 +186,7 @@ foreach(i=seq_along(AS_type_bootstrap), .packages = c("plyranges", "tidyverse"))
     
   }
 
-#combined 1-1000 bootstrapped samples into one sample
+#combined 1-1000 bootstrap samples into one sample
 PSI_DAS_removed_reduced <- 
 PSI_DAS_removed_1_1000_list %>%
   map(. %>% map(. %>% map(. %>% Reduce(bind_rows, .)))) %>%
@@ -309,14 +229,70 @@ M82_rMATs_anno_all_intron_exon_ordered <-
   bind_rows(M82_rMATs_anno_all_exon, M82_rMATs_anno_all_intron) %>%
   arrange(gene_name, seqnames, start) %>%
   group_by(gene_name) %>%
-  mutate(genetic_feature_label = c(1:n()))
+  mutate(genetic_feature_label = if_else(strand == "+", c(1:n()), c(n():1))) %>%
+  ungroup()
 
 write_delim(M82_rMATs_anno_all_intron_exon_ordered, "./data/M82_annotation_data/M82_rMATs_anno_all_intron_exon_ordered.bed", delim = "\t", col_names = TRUE)
 
-PSI_DAS_removed_reduced[[1]][[1]][[1]] %>%
-  left_join(M82_rMATs_anno_all_intron_exon_ordered)
+#create the function that can create genomic features upstream or downstream AS-included introns/exons
+#this function below can be used for extracting flanking genomic features of PSI-stable, control and PSI-changing exons/introns
+produce_flanking_genomic_feature <- function(data) {
+  genetic_feature_raw <- 
+    data %>%
+    left_join(M82_rMATs_anno_all_intron_exon_ordered) %>%
+    dplyr::select(strand, gene_name, genetic_feature_label)
+
+  upstream_genetic_feature_raw <-
+    genetic_feature_raw %>%
+    mutate(genetic_feature_label = if_else(strand=="+", genetic_feature_label - 1, genetic_feature_label + 1)) %>%
+    mutate(location_gr = "upstream")
+  
+  downstream_genetic_feature_raw <-   
+    genetic_feature_raw %>%
+    mutate(genetic_feature_label = if_else(strand=="+", genetic_feature_label + 1, genetic_feature_label - 1)) %>%
+    mutate(location_gr = "downstream")
+
+
+#create a function that can create upstream/downstream genomic feature flanking AS-included exon/intron at the same time
+produce_flanking_genomic_feature_inside <- function(data) {
+
+  flanking_genomic_feature_raw <- 
+    M82_rMATs_anno_all_intron_exon_ordered %>%
+    left_join(data) %>%
+    drop_na() %>%
+    dplyr::select(seqnames, start, end, strand, feature) %>%
+    distinct() %>%  
+    as_granges() %>%
+    GenomicRanges::reduce(ignore.strand=TRUE) 
+  
+  seqlevels(flanking_genomic_feature_raw) <- str_c("chr", c(1:12))
   
   
+  sort(flanking_genomic_feature_raw) %>%
+    as_tibble()
+
+}
+
+map(list(upstream_genetic_feature_raw, downstream_genetic_feature_raw), produce_flanking_genomic_feature_inside)
+
+}
+
+#create upstream/downstream genomic features for PSI_all and controls (no AS)
+for (i in seq_along(AS_type_bootstrap)) {
+  for (j in seq_along(PSI_type_simplified)) {
+    for (l in seq_along(location_gr_AS_included_body)) {
+      
+      location_gr_flanking_regions <- c("upstream_feature_gr", "downstream_feature_gr")
+      
+      path_output <- str_c("./data/AS_HS0_bootstrap_samples_DAS_removed/", AS_type_bootstrap[[i]], "_", PSI_type_simplified[[j]], "_", location_gr_flanking_regions, "_bootstrap_DAS_removed_1_1000_combined")
+      
+      flanking_genomic_feature_output <- produce_flanking_genomic_feature(PSI_DAS_removed_reduced[[i]][[j]][[l]])
+      
+      pwalk(list(flanking_genomic_feature_output, path_output), write_delim, delim = "\t", col_names = TRUE)
+      
+    }
+  }
+}
 
 #import DAS for extracting introns or exons with AS with following analysis
 All_DAS_events_all_comparisons_refined_for_granges <- 
@@ -326,68 +302,46 @@ All_DAS_events_all_comparisons_refined_for_granges <-
   map(. %>% split(.$comp)) %>%
   map(. %>% map(. %>% split(.$more_AS)))
 
-
 #create the function that extracts introns or exons with AS (RI or SE)
 produce_feature_with_AS <-
-function(data, data2){
-  data %>%
-    as_granges() %>%
-    mutate(n_overlaps = count_overlaps(., as_granges(data2))) %>%
-    filter(n_overlaps != 0) %>%
-    as_tibble() %>%
-    dplyr::select(seqnames, start, end, strand) %>%
-    distinct()
-}
+  function(data, data2){
+    data %>%
+      as_granges() %>%
+      mutate(n_overlaps = count_overlaps(., as_granges(data2))) %>%
+      filter(n_overlaps != 0) %>%
+      as_tibble() %>%
+      dplyr::select(seqnames, start, end, strand) %>%
+      distinct()
+  }
 
 #based on the DAS data, I produced exons/introns with SE/RI of DAS genes in terms of different comparisons of heat treatments and their trends (Inclusion or skipping)
+#then I extract their flanking regions and store them  
 heat_trt_comp <- c("HS0_HS1", "HS0_HS6", "HS1_HS6")
 Inc_AS_aft_trt <- c("inc", "sk")
 
 for (i in seq_along(AS_type_bootstrap)) {
   for (j in seq_along(heat_trt_comp)) {
     for (k in seq_along(Inc_AS_aft_trt)) {
-    
+      location_gr <- c("upstream_feature_gr", "downstream_feature_gr", "feature_gr")
       if(i == 1){
         feature_table <- produce_feature_with_AS(M82_rMATs_anno_all_intron, All_DAS_events_all_comparisons_refined_for_granges[[i]][[j]][[k]])
         
-        feature_upstream_table <-
-          feature_table %>%
-          mutate(start = as.double(start), end = as.double(end)) %>%
-          mutate(start_new = if_else(strand == "+", start - 100, end),
-                 end_new = if_else(strand == "+", start, end + 100)) %>%
-          dplyr::select(seqnames, start = start_new, end = end_new, strand)
-        
-        feature_downstream_table <-
-          feature_table %>%
-          mutate(start = as.double(start), end = as.double(end)) %>%
-          mutate(start_new = if_else(strand == "+", end, start - 100),
-                 end_new = if_else(strand == "+", end + 100, start)) %>%
-          dplyr::select(seqnames, start = start_new, end = end_new, strand)
+        list_flanking_feature_table <- produce_flanking_genomic_feature(feature_table)
         
         path_output <- str_c("./data/DAS_refined_bootstrap_and_combined/DAS_", AS_type_bootstrap[[i]], "_", location_gr, "_", heat_trt_comp[[j]], "_more_", Inc_AS_aft_trt[[k]], "_AS_aft_trt")
         
-        list_output <- list(feature_upstream_table, feature_table, feature_downstream_table)
+        list_output <- append(list_flanking_feature_table, list(feature_table))
+          
         pwalk(list(list_output, path_output), write_delim, delim = "\t", col_names = TRUE)  
       } else {
         feature_table <- produce_feature_with_AS(M82_rMATs_anno_all_exon, All_DAS_events_all_comparisons_refined_for_granges[[i]][[j]][[k]])
         
-        feature_upstream_table <-
-          feature_table %>%
-          mutate(start = as.double(start), end = as.double(end)) %>%
-          mutate(start_new = if_else(strand == "+", start - 100, end),
-                 end_new = if_else(strand == "+", start, end + 100)) %>%
-          dplyr::select(seqnames, start = start_new, end = end_new, strand)
-        
-        feature_downstream_table <-
-          feature_table %>%
-          mutate(start = as.double(start), end = as.double(end)) %>%
-          mutate(start_new = if_else(strand == "+", end, start - 100),
-                 end_new = if_else(strand == "+", end + 100, start)) %>%
-          dplyr::select(seqnames, start = start_new, end = end_new, strand)
+        list_flanking_feature_table <- produce_flanking_genomic_feature(feature_table)
         
         path_output <- str_c("./data/DAS_refined_bootstrap_and_combined/DAS_", AS_type_bootstrap[[i]], "_", location_gr, "_", heat_trt_comp[[j]], "_more_", Inc_AS_aft_trt[[k]], "_AS_aft_trt")
         
-        list_output <- list(feature_upstream_table, feature_table, feature_downstream_table)
+        list_output <- append(list_flanking_feature_table, list(feature_table))
+        
         pwalk(list(list_output, path_output), write_delim, delim = "\t", col_names = TRUE)
       } 
       
@@ -397,9 +351,133 @@ for (i in seq_along(AS_type_bootstrap)) {
   }
 }
 
-#import PSI combined, ctrl (no AS), DAS (sk/Inc in terms of 3 heat comp, 6 in total) as lists
-comp_AS_HS0_DAS_heat_trt_label <- c("PSI_all", "ctrl", str_c("HS0_HS1_more_", Inc_AS_aft_trt),
-                                    str_c("HS0_HS6_more_", Inc_AS_aft_trt), str_c("HS1_HS6_more_", Inc_AS_aft_trt))
+#Even though I separated DAS as different groups previously for their outputs in terms of the trend of changing PSI and heat treatment
+#here I combined H0/H1 and H0/H6 together for the simplicity of co-enrichment index calculation and their visualization
+location_gr <- c("upstream_feature_gr", "downstream_feature_gr", "feature_gr")
+comp_DAS_heat_trt_label <- c(str_c("HS0_HS6_more_", Inc_AS_aft_trt), str_c("HS1_HS6_more_", Inc_AS_aft_trt))
+
+DAS_combined_table_PSI_trend_heat_trt <- tibble()
+
+#import separate files into a merged table
+for (i in seq_along(AS_type_bootstrap)) {
+  for (j in seq_along(location_gr)) {
+    for (k in seq_along(comp_DAS_heat_trt_label)) {
+    
+      path_input <- str_c("./data/DAS_refined_bootstrap_and_combined/DAS_", AS_type_bootstrap[[i]], "_", location_gr[[j]], "_", comp_DAS_heat_trt_label[[k]], "_AS_aft_trt")
+      
+      table_input <- read_delim(path_input, delim = "\t", col_names = TRUE) %>%
+        mutate(AS_type = AS_type_bootstrap[[i]], location = location_gr[[j]])
+      
+      DAS_combined_table_PSI_trend_heat_trt <- bind_rows(DAS_combined_table_PSI_trend_heat_trt, table_input)
+    }
+  }
+}
+
+#produce the output
+DAS_combined_table_PSI_trend_heat_trt %>%
+  filter(AS_type == AS_type_bootstrap[[1]] & location == location_gr[[1]])
+
+for (i in seq_along(AS_type_bootstrap)) {
+  for (j in seq_along(location_gr)) {
+      path_output <- str_c("./data/DAS_refined_bootstrap_and_combined/DAS_", AS_type_bootstrap[[i]], "_", location_gr[[j]], "_merged_H16_aft_H0")
+      
+      table_output <- 
+        DAS_combined_table_PSI_trend_heat_trt %>%
+        filter(AS_type == AS_type_bootstrap[[i]] & location == location_gr[[j]]) %>%
+        dplyr::select(-AS_type, -location)
+      
+      write_delim(table_output, path_output, delim = "\t", col_names = TRUE)
+    
+  }
+}
+
+#install HelloRanges(this package can allow us to use r function to simulate functions in bedtools)
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(version = "3.16")
+
+BiocManager::install("HelloRanges")
+library(HelloRanges)
+
+#merge peaks of epigenetic marks with two replicates 
+mark_with_more_reps <- c("Pol2", "H3K4me3")
+heat_trt <- c("0H", "1H", "6H")
+
+#make function for merging marks with two reps
+merge_rep_epimark <- 
+  function(a, b){
+    path_peak <-
+      str_c("./data/peak_epimarks/heat_trt/M82_", a[1], "_", b[1], "_rep", c(1,2), "_p0.05_peaks.bed")
+    
+    mark_r1 <- 
+      read_delim(path_peak[[1]], delim = "\t", col_names = c("chr", "str", "end", "signal"))
+    
+    mark_r2 <- 
+      read_delim(path_peak[[2]], delim = "\t", col_names = c("chr", "str", "end", "signal"))
+    
+    
+    bind_rows(mark_r1, mark_r2) %>%
+      arrange(chr, str) %>%
+      dplyr::select(seqnames = chr, start = str, end, signal) %>%
+      as_granges() %>%
+      GenomicRanges::reduce()
+  }
+
+
+#make the output of merged epigenetic marks
+for (i in seq_along(heat_trt)) {
+  for (j in seq_along(mark_with_more_reps)) {
+    
+    merge_mark <- merge_rep_epimark(heat_trt[[i]], mark_with_more_reps[[j]])
+    
+    merge_mark <- merge_mark %>%
+      as_tibble() %>%
+      dplyr::select(-width, -strand) %>%
+      mutate(signal = 0)
+    
+    write_delim(merge_mark, str_c("./data/peak_epimarks/heat_trt/M82_", heat_trt[[i]], "_", mark_with_more_reps[[j]], "_merged_p0.05_peaks.bed"),
+                delim = "\t", col_names = FALSE)
+    
+  }
+}
+
+mark_heat_trt <- c("H3K9ac", "H3K18ac", "H3K27ac", "Pol2", "H3K4me3")
+list_gr_mark_heat_trt <- list()
+names_list_gr_mark_heat_trt <- c()
+
+
+#import the files of epigenetic marks under heat treatments
+for (i in seq_along(heat_trt)) {
+  for (j in seq_along(mark_heat_trt)) {
+    
+    if(sum(str_detect(mark_with_more_reps, mark_heat_trt[[j]]))==0){
+      input_gr_mark <- read_delim(str_c("./data/peak_epimarks/heat_trt/M82_", heat_trt[[i]], "_", mark_heat_trt[[j]], "_rep1_p0.05_peaks.bed"), 
+                                  delim = "\t", col_names = c("seqnames", "start", "end", "signal")) %>%
+        as_granges()
+      
+      list_gr_mark_heat_trt <- append(list_gr_mark_heat_trt, list(input_gr_mark))
+      
+      names_list_gr_mark_heat_trt <- append(names_list_gr_mark_heat_trt, str_c(heat_trt[[i]], "_", mark_heat_trt[[j]]))
+      
+    } else {
+      input_gr_mark <- read_delim(str_c("./data/peak_epimarks/heat_trt/M82_", heat_trt[[i]], "_", mark_heat_trt[[j]], "_merged_p0.05_peaks.bed"), 
+                                  delim = "\t", col_names = c("seqnames", "start", "end", "signal")) %>%
+        as_granges()
+      
+      list_gr_mark_heat_trt <- append(list_gr_mark_heat_trt, list(input_gr_mark))
+      
+      names_list_gr_mark_heat_trt <- append(names_list_gr_mark_heat_trt, str_c(heat_trt[[i]], "_", mark_heat_trt[[j]]))
+      
+    }
+    
+  }
+}
+
+names(list_gr_mark_heat_trt) <- names_list_gr_mark_heat_trt
+
+
+#Import PSI combined, ctrl (no AS), DAS (merging H0_H1 and H0_H6 for more inc or sk) as lists
+comp_AS_HS0_DAS_heat_trt_label <- c("PSI_all", "ctrl", "merged_H16_aft_H0")
 AS_type_focused <- c("RI", "SE")
 location_gr <- c("upstream_feature_gr", "feature_gr", "downstream_feature_gr")
 
@@ -412,26 +490,28 @@ for (i in seq_along(AS_type_focused)) {
       
       if(k %in% c(1, 2)){
         
-        path_input <- str_c("./data/AS_HS0_bootstrap_samples_DAS_removed/", AS_type_focused[[i]], "_", comp_AS_HS0_DAS_heat_trt_label[[k]], "_", location_gr[[j]], "_bootstrap_DAS_removed_1_100_combined")
+        path_input <- str_c("./data/AS_HS0_bootstrap_samples_DAS_removed/", AS_type_focused[[i]], "_", comp_AS_HS0_DAS_heat_trt_label[[k]], "_", location_gr[[j]], "_bootstrap_DAS_removed_1_1000_combined")
         
         name_input <- str_c(AS_type_focused[[i]], "_", location_gr[[j]], "_", comp_AS_HS0_DAS_heat_trt_label[[k]])
         
         names_list_gr_raw_comp_AS_HS0_DAS_heat_trt <- append(names_list_gr_raw_comp_AS_HS0_DAS_heat_trt, name_input)
         
         gr_sample <- read_delim(path_input, delim = "\t", col_names = TRUE) %>%
-          as_granges()
+          as_granges() %>%
+          GenomicRanges::reduce(ignore.strand=TRUE) 
         
         list_gr_raw_comp_AS_HS0_DAS_heat_trt <- append(list_gr_raw_comp_AS_HS0_DAS_heat_trt, list(gr_sample))
       } else {
         
-        path_input <- str_c("./data/DAS_refined_bootstrap_and_combined/DAS_", AS_type_focused[[i]], "_", location_gr[[j]], "_", comp_AS_HS0_DAS_heat_trt_label[[k]], "_AS_aft_trt")
+        path_input <- str_c("./data/DAS_refined_bootstrap_and_combined/DAS_", AS_type_focused[[i]], "_", location_gr[[j]], "_", comp_AS_HS0_DAS_heat_trt_label[[k]])
         
         name_input <- str_c(AS_type_focused[[i]], "_", location_gr[[j]], "_", comp_AS_HS0_DAS_heat_trt_label[[k]])
         
         names_list_gr_raw_comp_AS_HS0_DAS_heat_trt <- append(names_list_gr_raw_comp_AS_HS0_DAS_heat_trt, name_input)
         
         gr_sample <- read_delim(path_input, delim = "\t", col_names = TRUE) %>%
-          as_granges()
+          as_granges() %>%
+          GenomicRanges::reduce(ignore.strand=TRUE) 
         
         list_gr_raw_comp_AS_HS0_DAS_heat_trt <- append(list_gr_raw_comp_AS_HS0_DAS_heat_trt, list(gr_sample))
       }
@@ -443,12 +523,6 @@ for (i in seq_along(AS_type_focused)) {
 
 names(list_gr_raw_comp_AS_HS0_DAS_heat_trt) <- names_list_gr_raw_comp_AS_HS0_DAS_heat_trt
 
-join_overlap_intersect(list_gr_raw_comp_AS_HS0_DAS_heat_trt[[11]], list_gr_raw_comp_AS_HS0_DAS_heat_trt[[13]])
-
-list_gr_raw_comp_AS_HS0_DAS_heat_trt[[11]] %>%
-  GenomicRanges::reduce(., ignore.strand = TRUE)
-
-?reduce
 #check the size of introns/exons for different groups
 list_gr_raw_comp_AS_HS0_DAS_heat_trt %>%
   map(. %>% as_tibble()) %>%
@@ -459,6 +533,8 @@ list_gr_raw_comp_AS_HS0_DAS_heat_trt %>%
   filter(str_detect(name, "upstream")!=TRUE) %>%
   filter(str_detect(name, "downstream")!=TRUE) %>%
   View()
+
+#produce bootstrap samples for the following analysis (sample size = 0.5 * the size of initial data)
 
 #create the function for calculating single-mark enrichment index for each AS cases (PSI, ctrl and other DAS)
 create_enrichment_index_single_mark <- 
@@ -627,6 +703,53 @@ for (i in seq_along(list_comb_pair_epimark_heat_trt)) {
   
   coenrichment_index_table <- bind_rows(coenrichment_index_table, coenrichment_table_raw)
 }
+
+#perform bootstrap (50% for 1000 times)
+registerDoParallel(cores = 5)
+getDoParWorkers()
+
+names_list_gr_raw_comp_AS_HS0_DAS_heat_trt[[1]]
+
+foreach(i=seq_along(list_comb_pair_epimark_heat_trt), .packages = c("plyranges", "tidyverse")) %:%
+  foreach(k=1:1000, .packages = c("plyranges", "tidyverse")) %dopar% {
+    
+    
+    list_bt_sample <- map(list_gr_raw_comp_AS_HS0_DAS_heat_trt, produce_bootstrap_sample)
+    
+    bt_sample_path <- str_c("./data/AS_DAS_refined_bootstrap_samples/", names_list_gr_raw_comp_AS_HS0_DAS_heat_trt, "_bootstrap_sample_", k)
+    
+    pwalk(list(list_bt_sample, bt_sample_path), write_delim, delim = "\t", col_names = TRUE)
+    
+    #coenrichment_table_raw <- map2(list_bt_sample, rep(i, length(list_bt_sample)), create_coenrichment_index_two_marks) %>%
+      #Reduce(bind_rows, .) %>%
+      #mutate(feature = names_list_gr_raw_comp_AS_HS0_DAS_heat_trt, bt = k)
+    
+    #write_delim(coenrichment_table_raw, str_c("./analysis/AS_DAS_refined_bootstrap_result/coenrichment_index_bt_",k), delim = "\t", col_names = TRUE)
+    
+  }
+
+
+foreach(i=seq_along(list_comb_pair_epimark_heat_trt), .packages = c("plyranges", "tidyverse")) %:%
+  foreach(k=1:1000, .packages = c("plyranges", "tidyverse")) %dopar% {
+    
+    bt_sample_input_path <- str_c("./data/AS_DAS_refined_bootstrap_samples/", names_list_gr_raw_comp_AS_HS0_DAS_heat_trt, "_bootstrap_sample_", k)
+    
+    list_bt_sample <- map(bt_sample_input_path, read_delim, delim = "\t", col_names = TRUE) %>%
+      map(. %>% as_granges)
+    
+    coenrichment_table_raw <- 
+    map2(list_bt_sample, rep(i, length(list_bt_sample)), create_coenrichment_index_two_marks) %>%
+      Reduce(bind_rows, .) %>%
+      mutate(feature = names_list_gr_raw_comp_AS_HS0_DAS_heat_trt, bt = k)
+    
+    path_output <- str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/AS_DAS_refined_coenrichment_result/coenrichment_index_pair_mark_", i, "_bt_", k, ".txt")
+    
+    write_delim(coenrichment_table_raw, path_output, delim = "\t", col_names = TRUE)
+    
+  }
+
+
+
 
 write_delim(coenrichment_index_table, "./analysis/AS_RI_SE_epimark_coenrichment_analysis/coenrichment_index_table_combined_bootstrap_samples", delim = "\t", col_names = TRUE) 
 
