@@ -960,7 +960,7 @@ coenrichment_index_1000_bootstrap_total_hist_plots_raw %>%
   filter(AS_region == a[1] & pair_mark == b[1]) %>%
   ggplot(aes(PSI_group, bt_coenrichment_index_mean, fill=PSI_group)) +
   geom_bar(stat="identity") +
-  geom_errorbar(aes(ymin=coenrichment_index-sd_coenrichment_index, ymax=coenrichment_index+sd_coenrichment_index), width=.2) +
+  geom_errorbar(aes(ymin=bt_coenrichment_index_mean-sd_coenrichment_index, ymax=bt_coenrichment_index_mean+sd_coenrichment_index), width=.2) +
   scale_fill_manual(
     values = c(
       "#29f600",
@@ -981,8 +981,15 @@ coenrichment_index_1000_bootstrap_total_hist_plots_raw %>%
         axis.text.x = element_text(colour = "black", size = 20, face = "bold", angle = 60, vjust = 0.5))
 }
 
-produce_coenrichment_index_hist_plots(coenrichment_index_1000_bootstrap_total_hist_plots_key$AS_region[[1]],
-                                      coenrichment_index_1000_bootstrap_total_hist_plots_key$pair_mark[[1]])
+coenrichment_index_1000_bootstrap_total_hist_plots_raw %>% 
+  filter(AS_region == "SE_feature" & pair_mark == "H3K4me1_H3K4me3") %>%
+  View()
+
+coenrichment_index_1000_bootstrap_total_hist_plots_key %>%
+  View()
+
+produce_coenrichment_index_hist_plots(coenrichment_index_1000_bootstrap_total_hist_plots_key$AS_region[[91]],
+                                      coenrichment_index_1000_bootstrap_total_hist_plots_key$pair_mark[[91]])
 
 coenrichment_index_hist_plots_list <- 
 map2(coenrichment_index_1000_bootstrap_total_hist_plots_key$AS_region, 

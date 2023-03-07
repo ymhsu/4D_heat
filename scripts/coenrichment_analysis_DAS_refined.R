@@ -118,7 +118,7 @@ All_DAS_events_all_comparisons_refined_raw %>%
   mutate(more_AS = if_else(Incdf_f > 0, "yes", "no")) %>%
   mutate(comp = str_replace(comp, ".vs.", "_")) %>%
   mutate(comp = if_else(comp == "HS1_HS0", "HS0_HS1", if_else(comp == "HS6_HS0", "HS0_HS6", comp))) %>%
-  select(seqnames = chr, start = str, end, strand, AS_type, comp, Incdf = Incdf_f, IncLevel_former_tp, IncLevel_latter_tp, more_AS) %>%
+  dplyr::select(seqnames = chr, start = str, end, strand, AS_type, comp, Incdf = Incdf_f, IncLevel_former_tp, IncLevel_latter_tp, more_AS) %>%
   arrange(seqnames, start)
 
 
@@ -534,6 +534,92 @@ list_gr_raw_comp_AS_HS0_DAS_heat_trt %>%
   filter(str_detect(name, "downstream")!=TRUE) %>%
   View()
 
+#since we would like to check if size of features could influence profiles of epigenetic features
+#check quantiles of size for these AS events
+AS_event_size_check <- 
+function(data, data2) {
+data %>%
+  as_tibble() %>%
+  mutate(name = data2) %>%
+  mutate(size_group = if_else(width <= quantile(width, 0.33), "small",
+                              if_else(width > quantile(width, 0.66), "large", "medium"))) %>%
+  group_by(name, size_group) %>%
+  summarise(median_size_group = median(width))
+}
+
+
+map2(list_gr_raw_comp_AS_HS0_DAS_heat_trt, names_list_gr_raw_comp_AS_HS0_DAS_heat_trt, AS_event_size_check) %>%
+  bind_rows() %>%
+  View()
+
+AS_event_size_check_quantile <- 
+function(data, data2) {
+  data_t <- data %>%
+    as_tibble()
+  
+  tibble(name = data2, 
+         small = quantile(data_t$width, 0.33),
+         large = quantile(data_t$width, 0.66))
+}
+
+map2(list_gr_raw_comp_AS_HS0_DAS_heat_trt, names_list_gr_raw_comp_AS_HS0_DAS_heat_trt, AS_event_size_check_quantile) %>%
+  bind_rows() %>%
+  View()
+
+transform_AS_DAS_granges_into_tibble <- 
+  function(data, data2) {
+    data_t <- data %>%
+      as_tibble() %>%
+      mutate(name = data2)
+  }
+
+#combine the list of feature_gr of RI/SE as a list
+combined_table_AS_ctrl_DAS_feature_body <-
+  map2(list_gr_raw_comp_AS_HS0_DAS_heat_trt, names_list_gr_raw_comp_AS_HS0_DAS_heat_trt, transform_AS_DAS_granges_into_tibble) %>%
+  bind_rows() %>%
+  filter(str_detect(name, "RI_feature_gr") | str_detect(name, "SE_feature_gr"))
+
+#produce list of AS/DAS groups based on size selection using two cutting points making three quantiles of DAS
+produce_list_AS_DAS_size_selection <- 
+function(a){
+DAS_feature_body_tibble <- 
+  combined_table_AS_ctrl_DAS_feature_body %>%
+  filter(str_detect(name, a[1]) & str_detect(name, "merge")) 
+
+combined_table_AS_ctrl_DAS_feature_body %>%
+  filter(str_detect(name, a[1])) %>%
+  mutate(size_first_point = quantile(DAS_feature_body_tibble$width, 0.33),
+         size_second_point = quantile(DAS_feature_body_tibble$width, 0.67)) %>%
+  mutate(size_group = if_else(width <= size_first_point, "small",
+                              if_else(width > size_second_point, "large", "medium"))) %>%
+  mutate(AS_DAS_group = str_remove(name, str_c(str_sub(name, 1, 2), "_feature_gr_"))) %>%
+  group_by(AS_DAS_group, size_group) %>%
+  ungroup() %>%
+  split(.$AS_DAS_group) %>%
+  map(. %>% split(.$size_group))
+}
+
+list_RI_AS_DAS_size_selection <- produce_list_AS_DAS_size_selection("RI")
+list_SE_AS_DAS_size_selection <- produce_list_AS_DAS_size_selection("SE")
+
+list_AS_DAS_size_selection <- 
+  map(AS_type_focused, produce_list_AS_DAS_size_selection)
+
+for (i in seq_along(list_AS_DAS_size_selection)) {
+  for (j in seq_along(list_AS_DAS_size_selection[[1]])) {
+    for (k in seq_along(list_AS_DAS_size_selection[[1]][[1]])) {
+      
+      path_output <- str_c("./data/AS_DAS_refined_grouped_by_DAS_size/", AS_type_focused[[i]], "_", names(list_AS_DAS_size_selection[[i]])[[j]], "_feature_size_group_", 
+            names(list_AS_DAS_size_selection[[i]][[j]])[[k]], ".bed")
+      print(path_output)
+      #write_delim(list_AS_DAS_size_selection[[i]][[j]][[k]], path_output, delim = "\t", col_names = FALSE)
+      
+    }
+  }
+}
+
+#AS_DAS_refined_grouped_by_DAS_size
+
 #produce bootstrap samples for the following analysis (sample size = 0.5 * the size of initial data)
 
 #create the function for calculating single-mark enrichment index for each AS cases (PSI, ctrl and other DAS)
@@ -749,18 +835,44 @@ foreach(i=seq_along(list_comb_pair_epimark_heat_trt), .packages = c("plyranges",
   }
 
 
+#import coenrichment index result
 
+coenrichment_index_result_list <- 
+foreach(i=seq_along(list_comb_pair_epimark_heat_trt), .packages = c("plyranges", "tidyverse")) %:%
+  foreach(k=1:1000, .packages = c("plyranges", "tidyverse")) %dopar% {
+    
+    
+    path_input <- str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/AS_DAS_refined_coenrichment_result/coenrichment_index_pair_mark_", i, "_bt_", k, ".txt")
+    
+    read_delim(path_input, delim = "\t", col_names = TRUE)
+    
+  }
 
-write_delim(coenrichment_index_table, "./analysis/AS_RI_SE_epimark_coenrichment_analysis/coenrichment_index_table_combined_bootstrap_samples", delim = "\t", col_names = TRUE) 
+#with error bar (using bt samples)
+coenrichment_index_result_for_plot <- 
+coenrichment_index_result_list %>%
+  map(. %>% bind_rows) %>%
+  bind_rows() %>%
+  group_by(feature, mark_1, mark_2) %>%
+  summarise(mean_coenrichment_index = mean(coenrichment_index), sd_coenrichment_index = sd(coenrichment_index), count = n())
 
-rep(comp_AS_HS0_DAS_heat_trt_label, 2)
+write_delim(coenrichment_index_result_for_plot, "./analysis/AS_RI_SE_epimark_coenrichment_analysis/coenrichment_index_table_AS_combined_DAS_1000_bootstrap_samples.txt", delim = "\t", col_names = TRUE)
 
+coenrichment_index_result_for_plot_f <- 
+coenrichment_index_result_for_plot %>%
+  ungroup() %>%
+  mutate(AS_type = if_else(str_detect(feature, "RI"), "RI", "SE"),
+         region = if_else(str_detect(feature, "upstream_feature"), "upstream_feature", 
+                          if_else(str_detect(feature, "downstream_feature"), "downstream_feature", "feature"))) %>%
+  mutate(AS_DAS_groups = str_remove(feature, str_c(AS_type, "_", region, "_gr_"))) %>%
+  mutate(AS_region = str_c(AS_type, "_", region)) %>%
+  mutate(pair_mark = str_c(mark_1, str_sub(mark_2, 3, nchar(mark_2)))) %>%
+  mutate(AS_DAS_groups = if_else(AS_DAS_groups=="PSI_all", "AS_HS0_stable_PSI",
+                                 if_else(AS_DAS_groups=="merged_H16_aft_H0", "DAS_changed_PSI_aft_HS0", "ctrl"))) %>%
+  mutate(AS_DAS_groups = factor(AS_DAS_groups, levels = c("AS_HS0_stable_PSI", "ctrl", "DAS_changed_PSI_aft_HS0"))) %>%
+  dplyr::select(pair_mark, AS_region, coenrichment_index = mean_coenrichment_index, sd_coenrichment_index, AS_DAS_groups)
 
-
-nrow(coenrichment_index_table)/length(comp_AS_HS0_DAS_heat_trt_label)
-
-AS_type_focused
-
+#no error bar (all events in one sample)
 coenrichment_index_table_for_plot <- 
 coenrichment_index_table %>%
   mutate(AS_DAS_groups = rep(comp_AS_HS0_DAS_heat_trt_label, nrow(coenrichment_index_table)/length(comp_AS_HS0_DAS_heat_trt_label))) %>%
@@ -820,6 +932,47 @@ path_coenrichment_index_plots_hist_AS_DAS <-
   str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/coenrichment_analysis_heat_comb_epimark_AS_DAS_histograms/", coenrichment_index_table_for_plots_key$AS_region, "_", coenrichment_index_table_for_plots_key$pair_mark, "_coenrichment_index_AS_DAS.jpeg")
 
 pwalk(list(path_coenrichment_index_plots_hist_AS_DAS, coenrichment_index_hist_plots_list), ggsave,
+      width = 400, height = 240, units = c("mm"), dpi = 320)
+
+#produce function for creating error bars
+produce_bt_coenrichment_index_hist_plots <- function(a, b){
+  coenrichment_index_result_for_plot_f %>% 
+    filter(AS_region == a[1] & pair_mark ==b[1]) %>%
+    ggplot(aes(AS_DAS_groups, coenrichment_index, fill=AS_DAS_groups)) +
+    geom_bar(stat="identity") +
+    geom_errorbar(aes(ymin=coenrichment_index-sd_coenrichment_index, ymax=coenrichment_index+sd_coenrichment_index), width=.2) +
+    scale_fill_manual(
+      values = c(
+        "#29f600",
+        "#F6BE00",
+        "#fb6a4a"
+      )
+    ) +
+    facet_grid(AS_region ~ pair_mark) +
+    theme(strip.text.x = element_text(colour = "black", face = "bold", size = 20), legend.text = element_text(size = 9, face = "bold"), plot.title = element_text(hjust = 0.5, colour = "black", face = "bold", size = 18),
+          legend.title = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank(), 
+          axis.text.y = element_text(color = "black", size = 20, face = "bold"), strip.text.y = element_text(colour = "black", face = "bold", size = 18), 
+          axis.text.x = element_text(colour = "black", size = 20, face = "bold", angle = 60, vjust = 0.5))
+}
+
+coenrichment_index_table_for_bt_plots_key <- 
+  coenrichment_index_result_for_plot_f %>%
+  ungroup() %>%
+  dplyr::select(AS_region, pair_mark) %>%
+  distinct()
+
+bt_error_bars_coenrichment_index_hist_plots_list <- 
+  map2(coenrichment_index_table_for_bt_plots_key$AS_region, 
+       coenrichment_index_table_for_bt_plots_key$pair_mark,
+       produce_bt_coenrichment_index_hist_plots)
+
+produce_bt_coenrichment_index_hist_plots(coenrichment_index_table_for_bt_plots_key$AS_region[[1]],
+                                         coenrichment_index_table_for_bt_plots_key$pair_mark[[1]])
+
+path_bt_coenrichment_index_plots_hist_AS_combined_DAS <- 
+  str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/coenrichment_analysis_heat_comb_epimark_AS_combined_DAS_histograms/", coenrichment_index_table_for_bt_plots_key$AS_region, "_", coenrichment_index_table_for_bt_plots_key$pair_mark, "_coenrichment_index_AS_combined_DAS.jpeg")
+
+pwalk(list(path_bt_coenrichment_index_plots_hist_AS_combined_DAS, bt_error_bars_coenrichment_index_hist_plots_list), ggsave,
       width = 400, height = 240, units = c("mm"), dpi = 320)
 
 
