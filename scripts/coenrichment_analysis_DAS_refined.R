@@ -49,6 +49,13 @@ M82_rMATs_anno_all_gene <-
 #store DAS gene ID as a vector
 DAS_geneID <- unique(All_DAS_events_all_comparisons_refined$GeneID)
 
+DAS_gene <- 
+  tibble(
+    geneID = DAS_geneID
+    )
+
+write_delim(DAS_gene, "./analysis/DAS_list_gene_ID.txt", delim = "\t", col_names = FALSE)
+
 #Create the function that can use the content in the DAS-gene-ID vector for producing a table
 search_for_strand_DAS_gene <- function(a){
   M82_rMATs_anno_all_gene %>%
@@ -522,6 +529,45 @@ for (i in seq_along(AS_type_focused)) {
 }
 
 names(list_gr_raw_comp_AS_HS0_DAS_heat_trt) <- names_list_gr_raw_comp_AS_HS0_DAS_heat_trt
+
+#make the list of DAS, AS, and no-AS gene list
+str_match_all()
+
+M82_rMATs_anno_all_gene_modified <- 
+M82_rMATs_anno_all_gene %>%
+  filter(source != "REGARN") %>%
+  dplyr::select(seqnames = chr, start = str, end, gene_name) %>%
+  mutate(gene_name_m = if_else(str_detect(gene_name, "Solyc")==TRUE, str_sub(gene_name, 1, 16), str_sub(gene_name, 1, 100))) %>%
+  dplyr::select(seqnames, start, end, gene_name = gene_name_m) %>%
+  as_granges()
+
+extract_gene_name_AS_DAS <- function(data){
+  find_overlaps(M82_rMATs_anno_all_gene_modified, data) %>%
+    as_tibble() %>%
+    dplyr::select(gene_name) %>%
+    distinct()
+}
+
+#create gene list of changed and stable PSI
+gene_list_RI_stable_PSI_all <- 
+  extract_gene_name_AS_DAS(list_gr_raw_comp_AS_HS0_DAS_heat_trt[[4]])
+
+gene_list_RI_changed_PSI <- 
+  extract_gene_name_AS_DAS(list_gr_raw_comp_AS_HS0_DAS_heat_trt[[6]])
+
+
+gene_list_SE_stable_PSI_all <- 
+  extract_gene_name_AS_DAS(list_gr_raw_comp_AS_HS0_DAS_heat_trt[[13]])
+
+gene_list_SE_changed_PSI <- 
+  extract_gene_name_AS_DAS(list_gr_raw_comp_AS_HS0_DAS_heat_trt[[15]])
+
+
+write_delim(gene_list_RI_stable_PSI_all, "./analysis/gene_list_RI_stable_PSI_all.txt", delim = "\t", col_names = FALSE)  
+write_delim(gene_list_RI_changed_PSI, "./analysis/gene_list_RI_changed_PSI.txt", delim = "\t", col_names = FALSE)  
+write_delim(gene_list_SE_stable_PSI_all, "./analysis/gene_list_SE_stable_PSI_all.txt", delim = "\t", col_names = FALSE)  
+write_delim(gene_list_SE_changed_PSI, "./analysis/gene_list_SE_changed_PSI.txt", delim = "\t", col_names = FALSE)  
+
 
 #check the size of introns/exons for different groups
 list_gr_raw_comp_AS_HS0_DAS_heat_trt %>%
