@@ -7,12 +7,15 @@ lapply(Packages, library, character.only = TRUE)
 #Since We are more interested in the whole cassettes (intron-AS-included-exon-intron or exon-AS-included-intron-exon)
 #We will modify how to define the group of upstream_gr and downstream_gr here
 #Plus, we also include the DAS gene analysis, so we will extract the information of DAS gene first.
-#Then the DAS info will be used to filter out PSI_all and control groups to keep these two groups containing only PSI-stable or constitutively splicedgenes in response to heat treatment
+#Then the DAS info will be used to filter out PSI_all and control groups to keep these two groups containing only PSI-stable or constitutively spliced genes in response to heat treatment
 #Since this task is focusing on DAS, I only use 5 epigenetic marks that we have under heat treatment for the analysis
 
 #import the file of refined DAS genes
 All_DAS_events_all_comparisons_refined <-
   read_delim("./data/rMATS_out/All_DAS_events_all_comparisons_refined.tsv", delim = "\t", col_names = TRUE) 
+
+All_DAS_events_all_comparisons_refined %>%
+  View()
 
 #split Event_ID for extracting positions of AS 
 All_DAS_events_all_comparisons_refined_pos_index <- 
@@ -219,6 +222,7 @@ M82_rMATs_anno_all_exon <-
   read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_exon.bed", col_names = c("seqnames", "start", "end", "strand", "feature", "source", "gene_name")) %>%
   filter(strand == "+" | strand == "-")
 
+#calculate the medium of exon sizes
 M82_rMATs_anno_all_exon %>%
   summarise(median_exon = median(end-start))
 
@@ -227,6 +231,7 @@ M82_rMATs_anno_all_exon %>%
 M82_rMATs_anno_all_intron <-
   read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_intron.bed", col_names = c("seqnames", "start", "end", "strand", "feature", "source", "gene_name"))
 
+#calculate the medium of intron sizes
 M82_rMATs_anno_all_intron %>%
   summarise(median_intron = median(end-start))
 
@@ -406,7 +411,10 @@ BiocManager::install(version = "3.16")
 BiocManager::install("HelloRanges")
 library(HelloRanges)
 
-#merge peaks of epigenetic marks with two replicates 
+#since we only have two marks with two replicates
+#we focus on replicate 1 for all analysis
+#but we still merge two replicates of two epigenetic marks for the future analysis
+#merge peaks of epigenetic marks with two replicates
 mark_with_more_reps <- c("Pol2", "H3K4me3")
 heat_trt <- c("0H", "1H", "6H")
 
@@ -454,6 +462,7 @@ names_list_gr_mark_heat_trt <- c()
 
 
 #import the files of epigenetic marks under heat treatments
+#this is the old one that includes merged epigenetic marks
 for (i in seq_along(heat_trt)) {
   for (j in seq_along(mark_heat_trt)) {
     
@@ -480,10 +489,26 @@ for (i in seq_along(heat_trt)) {
   }
 }
 
+#the new one to include only replicate 1 of epigenetic marks
+for (i in seq_along(heat_trt)) {
+  for (j in seq_along(mark_heat_trt)) {
+    
+      input_gr_mark <- read_delim(str_c("./data/peak_epimarks/heat_trt/M82_", heat_trt[[i]], "_", mark_heat_trt[[j]], "_rep1_p0.05_peaks.bed"), 
+                                  delim = "\t", col_names = c("seqnames", "start", "end", "signal")) %>%
+        as_granges()
+      
+      list_gr_mark_heat_trt <- append(list_gr_mark_heat_trt, list(input_gr_mark))
+      
+      names_list_gr_mark_heat_trt <- append(names_list_gr_mark_heat_trt, str_c(heat_trt[[i]], "_", mark_heat_trt[[j]]))
+    
+  }
+}
+
+
 names(list_gr_mark_heat_trt) <- names_list_gr_mark_heat_trt
 
 
-#Import PSI combined, ctrl (no AS), DAS (merging H0_H1 and H0_H6 for more inc or sk) as lists
+#import PSI combined, ctrl (no AS), DAS (merging H0_H1 and H0_H6 for more inc or sk) as lists
 comp_AS_HS0_DAS_heat_trt_label <- c("PSI_all", "ctrl", "merged_H16_aft_H0")
 AS_type_focused <- c("RI", "SE")
 location_gr <- c("upstream_feature_gr", "feature_gr", "downstream_feature_gr")
@@ -530,7 +555,9 @@ for (i in seq_along(AS_type_focused)) {
 
 names(list_gr_raw_comp_AS_HS0_DAS_heat_trt) <- names_list_gr_raw_comp_AS_HS0_DAS_heat_trt
 
-#make the list of DAS, AS, and no-AS gene list
+list_gr_raw_comp_AS_HS0_DAS_heat_trt[[5]]
+
+#make the gene list of DAS, AS, and no-AS gene
 str_match_all()
 
 M82_rMATs_anno_all_gene_modified <- 
@@ -663,6 +690,13 @@ for (i in seq_along(list_AS_DAS_size_selection)) {
     }
   }
 }
+
+#based on the similar idea using deeptool to check profiles of epigenetic marks of DAS, AS (stable PSI), and no-AS genes
+#we focused on genomic features in large genes, and make profiles according to the junction of splicing sites instead of the boundaries of each genomic feature
+
+All_DAS_events_all_comparisons_refined_for_granges$RI$HS0_HS1$yes
+list_AS_DAS_size_selection[[1]]$PSI_all %>%
+  View()
 
 #AS_DAS_refined_grouped_by_DAS_size
 
