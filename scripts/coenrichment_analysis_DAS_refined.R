@@ -2,6 +2,7 @@ Sys.getlocale()
 Sys.setenv(LANG = "en_US.UTF-8")
 Packages <- c("plyranges", "tidyverse", "doParallel", "foreach", "nullranges", "caTools", "ggpubr", "fs", "HelloRanges")
 lapply(Packages, library, character.only = TRUE)
+library(doParallel)
 
 #Previously, our analysis focused on three regions (100-bp upstream/downstream junctions of exon/intron containing AS),
 #Since We are more interested in the whole cassettes (intron-AS-included-exon-intron or exon-AS-included-intron-exon)
@@ -181,6 +182,7 @@ AS_type_bootstrap <- c("RI", "SE")
 PSI_type_simplified <- c("PSI_all", "ctrl")
 location_gr_AS_included_body <- c("feature_gr")
 
+
 registerDoParallel(cores = 5)
 getDoParWorkers()
 
@@ -243,6 +245,9 @@ M82_rMATs_anno_all_intron_exon_ordered <-
   group_by(gene_name) %>%
   mutate(genetic_feature_label = if_else(strand == "+", c(1:n()), c(n():1))) %>%
   ungroup()
+
+M82_rMATs_anno_all_intron_exon_ordered %>%
+  View()
 
 write_delim(M82_rMATs_anno_all_intron_exon_ordered, "./data/M82_annotation_data/M82_rMATs_anno_all_intron_exon_ordered.bed", delim = "\t", col_names = TRUE)
 
@@ -693,10 +698,66 @@ for (i in seq_along(list_AS_DAS_size_selection)) {
 
 #based on the similar idea using deeptool to check profiles of epigenetic marks of DAS, AS (stable PSI), and no-AS genes
 #we focused on genomic features in large genes, and make profiles according to the junction of splicing sites instead of the boundaries of each genomic feature
+#import all AS (SE/RI) found in HS0
 
-All_DAS_events_all_comparisons_refined_for_granges$RI$HS0_HS1$yes
-list_AS_DAS_size_selection[[1]]$PSI_all %>%
-  View()
+path_input_AS_HS0 <- str_c("./data/AS_events_HS0/AS_HS0_PSI_segment/AS_HS0_", AS_type_focused, ".bed")
+
+AS_HS0_raw <- 
+  map(path_input_AS_HS0, read_delim, delim = "\t", col_names = c("seqnames", "start", "end", "trt", "AS_type", "PSI_type")) %>%
+  map(. %>% as_granges)
+
+#create a table with all DAS (from line 315)
+All_DAS_events_all_comparisons_refined_for_granges_combined <- 
+All_DAS_events_all_comparisons_refined_for_granges %>%
+  map(. %>% map(. %>% bind_rows)) %>%
+  map(. %>% bind_rows) %>%
+  bind_rows() %>%
+  as_granges()
+
+#remove DAS from all AS found in HS0
+AS_HS0_PSI_all_DAS_removed <- 
+  AS_HS0_raw %>%
+  map(. %>% mutate(n_overlaps = count_overlaps(., All_DAS_events_all_comparisons_refined_for_granges_combined))) %>%
+  map(. %>% filter(n_overlaps == 0))
+
+#extract only large-size RI or SE containing stable-PSI AS 
+list_AS_PSI_all_DAS_removed_feature <- list(list_AS_DAS_size_selection[[1]]$PSI_all$large, list_AS_DAS_size_selection[[2]]$PSI_all$large)
+
+#create the function that can extract splicing sites of AS events from large genes (specifically, large exons or introns)
+extract_AS_splicing_sites_large_genomic_feature <- 
+  function(data, data2){
+    data %>%
+      mutate(n_overlaps = count_overlaps(., as_granges(data2))) %>%
+      filter(n_overlaps != 0)
+  }
+
+#produce splicing sites of stable-PSI AS events from large genomic features
+AS_splicing_sites_HS0_PSI_all_DAS_removed_granges <- 
+  map2(AS_HS0_PSI_all_DAS_removed, list_AS_PSI_all_DAS_removed_feature, extract_AS_splicing_sites_large_genomic_feature)
+
+
+#extract only large-size RI or SE containing changing-PSI AS 
+list_DAS_changed_PSI_feature <- list(list_AS_DAS_size_selection[[1]]$merged_H16_aft_H0$large, list_AS_DAS_size_selection[[2]]$merged_H16_aft_H0$large)
+
+#produce splicing sites of changed-PSI AS events from large genomic features
+DAS_splicing_sites_merged_H16_aft_H0_granges <-
+  map2(list(All_DAS_events_all_comparisons_refined_for_granges_combined, All_DAS_events_all_comparisons_refined_for_granges_combined), list_DAS_changed_PSI_feature, extract_AS_splicing_sites_large_genomic_feature) %>%
+  map(. %>% filter(comp != "HS1_HS6"))
+
+
+#combine AS and DAS with the information of splicing sites together
+list_AS_DAS_splicing_site_large_events <- 
+  append(AS_splicing_sites_HS0_PSI_all_DAS_removed_granges, DAS_splicing_sites_merged_H16_aft_H0_granges) %>%
+  map(. %>% as_tibble())
+
+#produce the output of AS splicing sites
+AS_splicing_site_path_output <- str_c("./data/AS_DAS_refined_grouped_by_DAS_size/", rep(AS_type_focused, 2), "_splicing_sites", rep(c("_PSI_all_feature_size_group_large", "_merged_H16_aft_H0_feature_size_group_large"), each = 2), ".bed")
+
+
+
+pwalk(list(list_AS_DAS_splicing_site_large_events, AS_splicing_site_path_output), write_delim,
+      delim = "\t", col_names = FALSE)
+
 
 #AS_DAS_refined_grouped_by_DAS_size
 
