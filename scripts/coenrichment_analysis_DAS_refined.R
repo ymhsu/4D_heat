@@ -2,7 +2,7 @@ Sys.getlocale()
 Sys.setenv(LANG = "en_US.UTF-8")
 Packages <- c("plyranges", "tidyverse", "doParallel", "foreach", "nullranges", "caTools", "ggpubr", "fs", "HelloRanges")
 lapply(Packages, library, character.only = TRUE)
-library(doParallel)
+
 
 #Previously, our analysis focused on three regions (100-bp upstream/downstream junctions of exon/intron containing AS),
 #Since We are more interested in the whole cassettes (intron-AS-included-exon-intron or exon-AS-included-intron-exon)
@@ -860,12 +860,16 @@ pwalk(list(path_enrichment_index_plots_hist_AS_DAS, enrichment_index_hist_plots_
 
 
 #perform co-enrichment analysis for pairs of marks and make the plots
+#create the combination of two marks 
 comb_pair_epimark_heat_trt_raw <- combs(seq_along(mark_heat_trt), 2) 
 
+#since there are three heat trt for 5 epigenetic marks
+#here I produce three sets of 10 combinations for 5 marks (1~5, 6~1-, 11~15)
 comb_pair_epimark_heat_trt_table <- 
   tibble(mark_1 = c(comb_pair_epimark_heat_trt_raw[, 1], c(comb_pair_epimark_heat_trt_raw[, 1]+5), c(comb_pair_epimark_heat_trt_raw[, 1]+10)),
        mark_2 = c(comb_pair_epimark_heat_trt_raw[, 2], c(comb_pair_epimark_heat_trt_raw[, 2]+5), c(comb_pair_epimark_heat_trt_raw[, 2]+10)))
 
+#create a list containing peaks of 5 epigenetic features under 3 trt (15 samples)
 names_comb_pair_epimark_heat_trt_table <- tibble()
 
 list_comb_pair_epimark_heat_trt <- vector("list", length = length(comb_pair_epimark_heat_trt_table$mark_1))
@@ -884,15 +888,21 @@ for (i in seq_along(list_comb_pair_epimark_heat_trt)) {
 
 #list_gr_raw_comp_AS_HS0_DAS_heat_trt[[1]] data
 
+#the idea of coenrichment index is based on the intersection of each epigenetic mark and AS event (followingly designated as AS-mark intersection)
+#we used the intersection between two AS-mark intersections divided by the union of them
 create_coenrichment_index_two_marks <- 
 function(data, a){
 mark_1_feature_intersection <- 
 join_overlap_intersect(list_comb_pair_epimark_heat_trt[[a[1]]][[1]], data) %>%
   GenomicRanges::reduce()
 
+nrow_mark_1_feature_intersection <- nrow(as_tibble(mark_1_feature_intersection))
+
 mark_2_feature_intersection <- 
 join_overlap_intersect(list_comb_pair_epimark_heat_trt[[a[1]]][[2]], data) %>%
   GenomicRanges::reduce()
+
+nrow_mark_2_feature_intersection <- nrow(as_tibble(mark_2_feature_intersection))
 
 sum_bp_coenrichment <- 
 join_overlap_intersect(mark_1_feature_intersection, mark_2_feature_intersection) %>%
@@ -911,8 +921,10 @@ as_tibble(mark_2_feature_intersection) %>%
 tibble(
   mark_1 = names_comb_pair_epimark_heat_trt_table[a[1],]$mark_1,
   mark_2 = names_comb_pair_epimark_heat_trt_table[a[1],]$mark_2,
-  coenrichment_index = sum_bp_coenrichment$sum_bp_coenrichment/c(mark1_sum_bp_intersection$sum_bp_coenrichment + mark2_sum_bp_intersection$sum_bp_coenrichment - sum_bp_coenrichment$sum_bp_coenrichment)
+  coenrichment_index = if_else(nrow_mark_1_feature_intersection==0 | nrow_mark_2_feature_intersection==0, 0, sum_bp_coenrichment$sum_bp_coenrichment/c(mark1_sum_bp_intersection$sum_bp_coenrichment + mark2_sum_bp_intersection$sum_bp_coenrichment - sum_bp_coenrichment$sum_bp_coenrichment))
 )
+
+
 }
 
 length(list_gr_raw_comp_AS_HS0_DAS_heat_trt)
@@ -931,7 +943,44 @@ for (i in seq_along(list_comb_pair_epimark_heat_trt)) {
   coenrichment_index_table <- bind_rows(coenrichment_index_table, coenrichment_table_raw)
 }
 
-#perform bootstrap (50% for 1000 times)
+#To create boxplot, each AS event should be separated for calculating co-enrichment index
+#create the function to separate whole lists of DAS, AS, no-AS genes into separated events
+separate_AS_DAS_ctrl_list_into_each_event <- 
+  function(data){
+    data %>%
+      as_tibble() %>%
+      mutate(AS_label = c(1:n())) %>%
+      split(.$AS_label) %>%
+      map(. %>% as_granges())
+  }
+
+#create the above-mentioned separated events
+list_gr_raw_comp_AS_HS0_DAS_heat_trt_separated_events <- 
+  list_gr_raw_comp_AS_HS0_DAS_heat_trt %>%
+  map(. %>% separate_AS_DAS_ctrl_list_into_each_event)
+
+system.time(
+map2(test_short, rep(1, length(test_short)), create_coenrichment_index_two_marks) %>%
+  Reduce(bind_rows, .)
+)
+
+for (i in seq_along(list_comb_pair_epimark_heat_trt)) {
+  for (j in list_gr_raw_comp_AS_HS0_DAS_heat_trt_separated_events) {
+    coenrichment_table_raw <- map2(list_gr_raw_comp_AS_HS0_DAS_heat_trt_separated_events[[j]], rep(i, length(list_gr_raw_comp_AS_HS0_DAS_heat_trt_separated_events[[j]])), create_coenrichment_index_two_marks) %>%
+      Reduce(bind_rows, .) %>%
+      mutate(AS_label = c(1:n()), feature = names_list_gr_raw_comp_AS_HS0_DAS_heat_trt[[j]])
+    
+    path_output <- str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/AS_DAS_separated_events_refined_coenrichment_result/", names_list_gr_raw_comp_AS_HS0_DAS_heat_trt[[j]], "_mark_comb_", i)
+    
+    write_delim(coenrichment_table_raw, path_output, delim = "\t", col_names = TRUE)
+  }
+}
+
+foreach(i=seq_along(list_comb_pair_epimark_heat_trt), .packages = c("plyranges", "tidyverse")) %:%
+  foreach(k=1:1000, .packages = c("plyranges", "tidyverse")) %dopar% {
+
+
+#perform bootstrap (50% for 1000 times, for creating error bars)
 registerDoParallel(cores = 5)
 getDoParWorkers()
 
