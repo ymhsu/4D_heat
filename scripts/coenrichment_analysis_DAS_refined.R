@@ -963,60 +963,153 @@ create_coenrichment_index_two_marks_separated_events <-
   function(data, a){
     #
     mark_1_feature_intersection <-
-      join_overlap_intersect(list_comb_pair_epimark_heat_trt[[a[1]]][[1]], data)
+      join_overlap_intersect(list_comb_pair_epimark_heat_trt[[a[1]]][[1]], data) %>%
+      as_tibble() %>%
+      group_by(AS_label) %>%
+      mutate(sub_AS_label = c(1:n())) %>%
+      mutate(AS_label_mark_1 = str_c(AS_label, "_", sub_AS_label)) %>%
+      dplyr::select(-sub_AS_label) %>%
+      as_granges()
     
     #
     mark_2_feature_intersection <-
-      join_overlap_intersect(list_comb_pair_epimark_heat_trt[[a[1]]][[2]], data)
+      join_overlap_intersect(list_comb_pair_epimark_heat_trt[[a[1]]][[2]], data) %>%
+      as_tibble() %>%
+      group_by(AS_label) %>%
+      mutate(sub_AS_label = c(1:n())) %>%
+      mutate(AS_label_mark_2 = str_c(AS_label, "_", sub_AS_label)) %>%
+      dplyr::select(-sub_AS_label) %>%
+      as_granges()
     
     
     #
     sum_bp_coenrichment <-
       join_overlap_intersect(mark_1_feature_intersection, mark_2_feature_intersection) %>%
       as_tibble() %>%
-      dplyr::select(AS_label = AS_label.x, two_mark_sum_up_intersection = width) 
+      dplyr::select(AS_label = AS_label.x, AS_label_mark_1, AS_label_mark_2, two_mark_sum_up_intersection = width) 
+    
     
     
     #
     mark_1_sum_bp_intersection <-
       mark_1_feature_intersection %>%
       as_tibble() %>%
-      dplyr::select(AS_label, mark1_sum_bp_intersection = width)
+      dplyr::select(AS_label, AS_label_mark_1, mark1_sum_bp_intersection = width)
     
     
     #
     mark_2_sum_bp_intersection <-
       mark_2_feature_intersection %>%
       as_tibble() %>%
-      dplyr::select(AS_label, mark2_sum_bp_intersection = width)
+      dplyr::select(AS_label, AS_label_mark_2, mark2_sum_bp_intersection = width)
     
     
     data %>%
       as_tibble() %>%
       mutate(mark_1 = names_comb_pair_epimark_heat_trt_table[a[1],]$mark_1,
              mark_2 = names_comb_pair_epimark_heat_trt_table[a[1],]$mark_2) %>%
-      left_join(mark_1_sum_bp_intersection) %>%
-      left_join(mark_2_sum_bp_intersection) %>%
-      left_join(sum_bp_coenrichment) %>%
-      replace_na(list(two_mark_sum_up_intersection = 0, mark2_sum_bp_intersection = 0, mark1_sum_bp_intersection = 0)) %>%
-      mutate(coenrichment_index = if_else(mark1_sum_bp_intersection == 0 | mark2_sum_bp_intersection == 0, 0, two_mark_sum_up_intersection/(mark1_sum_bp_intersection + mark2_sum_bp_intersection - two_mark_sum_up_intersection))) 
+      left_join(sum_bp_coenrichment_test) %>%
+      left_join(mark_1_sum_bp_intersection_test) %>%
+      left_join(mark_2_sum_bp_intersection_test)%>%
+      replace_na(list(AS_label_mark_1 = "no", AS_label_mark_2 = "no", two_mark_sum_up_intersection = 0, mark2_sum_bp_intersection = 0, mark1_sum_bp_intersection = 0)) %>%
+      mutate(coenrichment_index = if_else(mark1_sum_bp_intersection == 0 | mark2_sum_bp_intersection == 0, 0, two_mark_sum_up_intersection/(mark1_sum_bp_intersection + mark2_sum_bp_intersection - two_mark_sum_up_intersection)))
   }
 
-
 for (i in seq_along(list_comb_pair_epimark_heat_trt)) {
-#for (i in c(27:30)) {
   for (j in seq_along(list_gr_raw_comp_AS_HS0_DAS_heat_trt_separated_events)) {
     coenrichment_table_raw <- create_coenrichment_index_two_marks_separated_events(list_gr_raw_comp_AS_HS0_DAS_heat_trt_separated_events[[j]], i) %>%
       mutate(feature = names_list_gr_raw_comp_AS_HS0_DAS_heat_trt[[j]])
     
-    path_output <- str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/AS_DAS_separated_events_refined_coenrichment_result/", names_list_gr_raw_comp_AS_HS0_DAS_heat_trt[[j]], "_mark_comb_", i, ".txt")
+    path_output <- str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/AS_DAS_separated_events_refined_coenrichment_result_2/", names_list_gr_raw_comp_AS_HS0_DAS_heat_trt[[j]], "_mark_comb_", i, ".txt")
     
     write_delim(coenrichment_table_raw, path_output, delim = "\t", col_names = TRUE)
   }
 }
 
-foreach(i=seq_along(list_comb_pair_epimark_heat_trt), .packages = c("plyranges", "tidyverse")) %:%
-  foreach(k=1:1000, .packages = c("plyranges", "tidyverse")) %dopar% {
+#import single table of co-enrichment index for separated events
+coenrichment_index_separated_events_path_input <- dir_ls("./analysis/AS_RI_SE_epimark_coenrichment_analysis/AS_DAS_separated_events_refined_coenrichment_result_2/", glob = "*.txt")
+
+length(coenrichment_index_separated_events_path_input)
+
+list_coenrichment_index_separated_events_path_input <- list()
+
+str_remove(coenrichment_index_separated_events_path_input, "./analysis/AS_RI_SE_epimark_coenrichment_analysis/AS_DAS_separated_events_refined_coenrichment_result_2/")
+
+grep("RIupstream_feature_gr", str_remove(coenrichment_index_separated_events_path_input, "./analysis/AS_RI_SE_epimark_coenrichment_analysis/AS_DAS_separated_events_refined_coenrichment_result_2/")
+)
+
+test <- 
+read_delim(coenrichment_index_separated_events_path_input[[1]], delim = "\t", col_names = TRUE)
+
+
+
+test %>%
+  mutate(comb = str_c(mark_1, str_remove(mark_2, ".H"))) %>%
+  ggplot(aes(x=comb, y=coenrichment_index)) + 
+  geom_boxplot()
+
+for (i in seq_along(coenrichment_index_separated_events_path_input)) {
+  
+  read_delim()
+  
+}
+
+comp_AS_HS0_DAS_heat_trt_label <- c("PSI_all", "ctrl", "merged_H16_aft_H0")
+AS_type_focused <- c("RI", "SE")
+location_gr <- c("upstream_feature_gr", "feature_gr", "downstream_feature_gr")
+
+
+coenrichment_index_violin_plot_list <- list()
+
+for (i in seq_along(AS_type_focused)) {
+  for (j in seq_along(location_gr)) {
+    for (k in seq_along(1:30)) {
+      
+      path_input <- str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/AS_DAS_separated_events_refined_coenrichment_result_2/", AS_type_focused[[i]], "_", location_gr[[j]], "_", comp_AS_HS0_DAS_heat_trt_label, "_mark_comb_", k,".txt")
+      
+      combined_table <-
+        map(path_input, read_delim, delim = "\t", col_names = TRUE) %>%
+        Reduce(bind_rows, .)
+      
+      final_table <- 
+      combined_table %>%
+        mutate(comb = str_c(mark_1, str_remove(mark_2, ".H"))) %>%
+        mutate(AS_region = str_remove(str_c(AS_type_focused[[i]], "_", location_gr[[j]]), "_gr")) %>%
+        mutate(AS_DAS_groups = str_remove(feature, str_c(AS_region, "_gr_"))) %>%
+        mutate(AS_DAS_groups = if_else(AS_DAS_groups=="PSI_all", "AS_HS0_stable_PSI",
+                                       if_else(AS_DAS_groups=="merged_H16_aft_H0", "DAS_changed_PSI_aft_HS0", "ctrl"))) %>%
+        mutate(AS_DAS_groups = factor(AS_DAS_groups, levels = c("AS_HS0_stable_PSI", "ctrl", "DAS_changed_PSI_aft_HS0"))) 
+      
+      final_plot <- 
+        final_table %>%
+        ggplot(aes(x=AS_DAS_groups, y=coenrichment_index, fill = AS_DAS_groups)) + 
+        #geom_boxplot() +
+        geom_violin() +
+        facet_grid(AS_region ~ comb) +
+        scale_fill_manual(
+          values = c(
+            "#29f600",
+            "#F6BE00",
+            "#fb6a4a"
+          )
+        ) +
+        theme(strip.text.x = element_text(colour = "black", face = "bold", size = 20), legend.text = element_text(size = 9, face = "bold"), plot.title = element_text(hjust = 0.5, colour = "black", face = "bold", size = 18),
+              legend.title = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank(), 
+              axis.text.y = element_text(color = "black", size = 20, face = "bold"), strip.text.y = element_text(colour = "black", face = "bold", size = 18), 
+              axis.text.x = element_text(colour = "black", size = 20, face = "bold", angle = 60, vjust = 0.5))
+      
+      path_coenrichment_index_plots_boxplot_AS_DAS <- 
+        str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/coenrichment_analysis_heat_comb_epimark_AS_combined_DAS_boxplots/", AS_type_focused[[i]], "_", location_gr[[j]], "_", final_table$comb[[1]], "_coenrichment_index_AS_DAS_boxplot.jpeg")
+      
+      
+      ggsave(path_coenrichment_index_plots_boxplot_AS_DAS, final_plot, width = 400, height = 240, units = c("mm"), dpi = 320)
+      
+    }
+  }
+}
+
+?ggsave
+
 
 
 #perform bootstrap (50% for 1000 times, for creating error bars)
