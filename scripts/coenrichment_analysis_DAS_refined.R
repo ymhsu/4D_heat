@@ -512,7 +512,6 @@ for (i in seq_along(heat_trt)) {
 
 names(list_gr_mark_heat_trt) <- names_list_gr_mark_heat_trt
 
-
 #import PSI combined, ctrl (no AS), DAS (merging H0_H1 and H0_H6 for more inc or sk) as lists
 comp_AS_HS0_DAS_heat_trt_label <- c("PSI_all", "ctrl", "merged_H16_aft_H0")
 AS_type_focused <- c("RI", "SE")
@@ -557,6 +556,7 @@ for (i in seq_along(AS_type_focused)) {
     }
   }
 }
+
 
 names(list_gr_raw_comp_AS_HS0_DAS_heat_trt) <- names_list_gr_raw_comp_AS_HS0_DAS_heat_trt
 
@@ -690,7 +690,7 @@ for (i in seq_along(list_AS_DAS_size_selection)) {
       path_output <- str_c("./data/AS_DAS_refined_grouped_by_DAS_size/", AS_type_focused[[i]], "_", names(list_AS_DAS_size_selection[[i]])[[j]], "_feature_size_group_", 
             names(list_AS_DAS_size_selection[[i]][[j]])[[k]], ".bed")
       print(path_output)
-      #write_delim(list_AS_DAS_size_selection[[i]][[j]][[k]], path_output, delim = "\t", col_names = FALSE)
+      write_delim(list_AS_DAS_size_selection[[i]][[j]][[k]], path_output, delim = "\t", col_names = TRUE)
       
     }
   }
@@ -922,16 +922,27 @@ tibble(
   mark_1 = names_comb_pair_epimark_heat_trt_table[a[1],]$mark_1,
   mark_2 = names_comb_pair_epimark_heat_trt_table[a[1],]$mark_2,
   coenrichment_index = if_else(nrow_mark_1_feature_intersection==0 | nrow_mark_2_feature_intersection==0, 0, sum_bp_coenrichment$sum_bp_coenrichment/c(mark1_sum_bp_intersection$sum_bp_coenrichment + mark2_sum_bp_intersection$sum_bp_coenrichment - sum_bp_coenrichment$sum_bp_coenrichment))
-)
+) %>%
+  mutate(
+    mark_1_sum_bp_intersection = mark1_sum_bp_intersection$sum_bp_coenrichment,
+    mark_2_sum_bp_intersection = mark2_sum_bp_intersection$sum_bp_coenrichment,
+    sum_bp_coenrichment = sum_bp_coenrichment$sum_bp_coenrichment
+  )
 
 
 }
 
 length(list_gr_raw_comp_AS_HS0_DAS_heat_trt)
-create_coenrichment_index_two_marks(list_gr_raw_comp_AS_HS0_DAS_heat_trt[[1]], 1)
+create_coenrichment_index_two_marks(list_gr_raw_comp_AS_HS0_DAS_heat_trt[[5]], 1)
+join_overlap_intersect(list_comb_pair_epimark_heat_trt[[1]][[2]], list_gr_raw_comp_AS_HS0_DAS_heat_trt[[5]]) %>%
+  #GenomicRanges::reduce() %>%
+  as_tibble() %>%
+  summarise(sum_bp_coenrichment = sum(end-start))
 
+
+list_gr_raw_comp_AS_HS0_DAS_heat_trt[[5]]
 names_list_gr_raw_comp_AS_HS0_DAS_heat_trt
-
+list_comb_pair_epimark_heat_trt[[1]][[2]]
 coenrichment_index_table <- tibble()
 list_comb_pair_epimark_heat_trt
 
@@ -1008,9 +1019,9 @@ create_coenrichment_index_two_marks_separated_events <-
       as_tibble() %>%
       mutate(mark_1 = names_comb_pair_epimark_heat_trt_table[a[1],]$mark_1,
              mark_2 = names_comb_pair_epimark_heat_trt_table[a[1],]$mark_2) %>%
-      left_join(sum_bp_coenrichment_test) %>%
-      left_join(mark_1_sum_bp_intersection_test) %>%
-      left_join(mark_2_sum_bp_intersection_test)%>%
+      left_join(sum_bp_coenrichment) %>%
+      left_join(mark_1_sum_bp_intersection) %>%
+      left_join(mark_2_sum_bp_intersection)%>%
       replace_na(list(AS_label_mark_1 = "no", AS_label_mark_2 = "no", two_mark_sum_up_intersection = 0, mark2_sum_bp_intersection = 0, mark1_sum_bp_intersection = 0)) %>%
       mutate(coenrichment_index = if_else(mark1_sum_bp_intersection == 0 | mark2_sum_bp_intersection == 0, 0, two_mark_sum_up_intersection/(mark1_sum_bp_intersection + mark2_sum_bp_intersection - two_mark_sum_up_intersection)))
   }
@@ -1026,6 +1037,11 @@ for (i in seq_along(list_comb_pair_epimark_heat_trt)) {
   }
 }
 
+create_coenrichment_index_two_marks_separated_events(list_gr_raw_comp_AS_HS0_DAS_heat_trt_separated_events[[1]], 1) %>%
+  mutate(feature = names_list_gr_raw_comp_AS_HS0_DAS_heat_trt[[1]]) %>%
+  View()
+
+names_list_gr_raw_comp_AS_HS0_DAS_heat_trt[[1]]
 #import single table of co-enrichment index for separated events
 coenrichment_index_separated_events_path_input <- dir_ls("./analysis/AS_RI_SE_epimark_coenrichment_analysis/AS_DAS_separated_events_refined_coenrichment_result_2/", glob = "*.txt")
 
@@ -1048,11 +1064,7 @@ test %>%
   ggplot(aes(x=comb, y=coenrichment_index)) + 
   geom_boxplot()
 
-for (i in seq_along(coenrichment_index_separated_events_path_input)) {
-  
-  read_delim()
-  
-}
+
 
 comp_AS_HS0_DAS_heat_trt_label <- c("PSI_all", "ctrl", "merged_H16_aft_H0")
 AS_type_focused <- c("RI", "SE")
