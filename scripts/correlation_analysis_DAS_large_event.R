@@ -53,11 +53,18 @@ list_gr_raw_comp_DAS_heat_trt_separated_events <-
 names(list_gr_raw_comp_DAS_heat_trt_separated_events) <- names_list_gr_raw_comp_DAS_heat_trt
 
 
-#import the files of epigenetic marks under heat treatments
+#import the files of epigenetic marks under heat treatments (peaks or all regions)
 heat_trt <- c("0H", "1H", "6H")
 mark_heat_trt <- c("H3K9ac", "H3K18ac", "H3K27ac", "Pol2", "H3K4me3")
+
+#peaks
 list_gr_mark_heat_trt <- list()
 names_list_gr_mark_heat_trt <- c()
+
+#all regions
+list_gr_mark_heat_trt_all_regions <- list()
+names_list_gr_mark_heat_trt_all_regions <- c()
+
 
 #each epigenetic mark include one replicate
 for (i in seq_along(heat_trt)) {
@@ -67,15 +74,28 @@ for (i in seq_along(heat_trt)) {
                                 delim = "\t", col_names = c("seqnames", "start", "end", "signal")) %>%
       as_granges()
     
+    input_gr_mark_all_regions <- 
+      read_delim(str_c("./data/epimark_heat_trt_bedgraph/M82_", heat_trt[[i]], "_", mark_heat_trt[[j]], "_rep1_s3norm.bedGraph"), 
+                 delim = "\t", col_names = c("seqnames", "start", "end", "signal")) %>%
+      as_granges()
+    
     list_gr_mark_heat_trt <- append(list_gr_mark_heat_trt, list(input_gr_mark))
     
     names_list_gr_mark_heat_trt <- append(names_list_gr_mark_heat_trt, str_c(heat_trt[[i]], "_", mark_heat_trt[[j]]))
+    
+    list_gr_mark_heat_trt_all_regions <- append(list_gr_mark_heat_trt_all_regions, list(input_gr_mark_all_regions))
+    
+    names_list_gr_mark_heat_trt_all_regions <- append(names_list_gr_mark_heat_trt_all_regions, str_c(heat_trt[[i]], "_", mark_heat_trt[[j]], "_all_regions"))
     
   }
 }
 
 
+M82_0H_H3K4me3_rep1_s3norm.bedGraph
 
+input_gr_mark <- read_delim(str_c("./data/epimark_heat_trt_bedgraph/M82_", heat_trt[[i]], "_", mark_heat_trt[[j]], "_rep1_s3norm.bedGraph"), 
+                            delim = "\t", col_names = c("seqnames", "start", "end", "signal")) %>%
+  as_granges()
 
 
 
@@ -402,6 +422,168 @@ for (i in seq_along(mark_heat_trt)) {
 }
 list_plots_delta_epigenetic_features_0H_6H[[1]]
 
+#all regions
+create_delta_epigenetic_feature_average_signal_tables <-
+  function(a) {
+    DAS_event_gr <-
+      large_DAS_aft_H0_Incdf[[a[2]]] %>%
+      as_tibble() %>%
+      mutate(DAS_label = c(1:n())) %>%
+      as_granges()
+    
+    DAS_event_gr_epimark_0H_all_regions <-
+      DAS_event_gr %>%
+      join_overlap_intersect(., list_gr_mark_heat_trt_all_regions[[a[1]]]) %>%
+      as_tibble() %>%
+      mutate(signal_0H = signal) %>%
+      dplyr::select(-signal) %>%
+      group_by(DAS_label) %>%
+      mutate(average_signal_0H = sum(signal_0H * width) / sum(width)) %>%
+      dplyr::select(DAS_label, average_signal_0H) %>%
+      ungroup() %>%
+      distinct()
+    
+    DAS_event_gr_epimark_1H_all_regions <-
+      DAS_event_gr %>%
+      join_overlap_intersect(., list_gr_mark_heat_trt_all_regions[[a[1] + 5]]) %>%
+      as_tibble() %>%
+      mutate(signal_1H = signal) %>%
+      dplyr::select(-signal) %>%
+      group_by(DAS_label) %>%
+      mutate(average_signal_1H = sum(signal_1H * width) / sum(width)) %>%
+      dplyr::select(DAS_label, average_signal_1H) %>%
+      ungroup() %>%
+      distinct()
+    
+    DAS_event_gr_epimark_6H_all_regions <-
+      DAS_event_gr %>%
+      join_overlap_intersect(., list_gr_mark_heat_trt_all_regions[[a[1] + 10]]) %>%
+      as_tibble() %>%
+      mutate(signal_6H = signal) %>%
+      dplyr::select(-signal) %>%
+      group_by(DAS_label) %>%
+      mutate(average_signal_6H = sum(signal_6H * width) / sum(width)) %>%
+      dplyr::select(DAS_label, average_signal_6H) %>%
+      ungroup() %>%
+      distinct()
+    
+    
+    DAS_event_gr_cor_raw <-
+      DAS_event_gr %>%
+      as_tibble() %>%
+      left_join(DAS_event_gr_epimark_0H_all_regions) %>%
+      left_join(DAS_event_gr_epimark_1H_all_regions) %>%
+      left_join(DAS_event_gr_epimark_6H_all_regions) %>%
+      replace_na(list(
+        average_signal_0H = 0,
+        average_signal_1H = 0,
+        average_signal_6H = 0
+      )) %>%
+      mutate(
+        delta_average_signal_0H_1H = average_signal_1H / mean(average_signal_1H) - average_signal_0H / mean(average_signal_0H),
+        delta_average_signal_0H_6H = average_signal_6H / mean(average_signal_6H) - average_signal_0H / mean(average_signal_0H)
+      ) %>%
+      mutate(
+        AS_type = str_c("delta_", AS_type_focused[[a[2]]], "_PSI"),
+        epigenetic_feature_0H_1H = str_c(
+          "delta",
+          str_remove(names_list_gr_mark_heat_trt_all_regions[[a[1]]], ".H"),
+          "_average_signal_0H_1H"
+        ),
+        epigenetic_feature_0H_6H = str_c(
+          "delta",
+          str_remove(names_list_gr_mark_heat_trt_all_regions[[a[1]]], ".H"),
+          "_average_signal_0H_6H"
+        )
+      )
+    
+    DAS_event_gr_cor_raw
+  }
+
+list_table_delta_epigenetic_feature_average_signal_PSI <- list()
+list_plots_delta_epigenetic_features_average_signal_0H_1H <- list()
+list_plots_delta_epigenetic_features_average_signal_0H_6H <- list()
+
+for (i in seq_along(mark_heat_trt)) {
+  for (j in seq_along(AS_type_focused)) {
+    delta_epi_table <- create_delta_epigenetic_feature_average_signal_tables(c(i,j))
+    
+    delta_epi_plot_0H_1H <-
+      delta_epi_table %>%
+      ggplot(aes(delta_average_signal_0H_1H, Incdf)) +
+      geom_point() +
+      facet_grid(AS_type ~ epigenetic_feature_0H_1H) +
+      theme(
+        strip.text.x = element_text(
+          colour = "black",
+          face = "bold",
+          size = 20
+        ),
+        legend.text = element_text(size = 9, face = "bold"),
+        plot.title = element_text(
+          hjust = 0.5,
+          colour = "black",
+          face = "bold",
+          size = 18
+        ),
+        legend.title = element_blank(),
+        axis.text.y = element_text(color = "black", size = 20, face = "bold"),
+        strip.text.y = element_text(
+          colour = "black",
+          face = "bold",
+          size = 18
+        ),
+        axis.text.x = element_text(
+          colour = "black",
+          size = 20,
+          face = "bold",
+          angle = 60,
+          vjust = 0.5
+        )
+      )
+    
+    delta_epi_plot_0H_6H <-
+      delta_epi_table %>%
+      ggplot(aes(delta_average_signal_0H_6H, Incdf)) +
+      geom_point() +
+      facet_grid(AS_type ~ epigenetic_feature_0H_6H) +
+      theme(
+        strip.text.x = element_text(
+          colour = "black",
+          face = "bold",
+          size = 20
+        ),
+        legend.text = element_text(size = 9, face = "bold"),
+        plot.title = element_text(
+          hjust = 0.5,
+          colour = "black",
+          face = "bold",
+          size = 18
+        ),
+        legend.title = element_blank(),
+        axis.text.y = element_text(color = "black", size = 20, face = "bold"),
+        strip.text.y = element_text(
+          colour = "black",
+          face = "bold",
+          size = 18
+        ),
+        axis.text.x = element_text(
+          colour = "black",
+          size = 20,
+          face = "bold",
+          angle = 60,
+          vjust = 0.5
+        )
+      )
+    
+    list_table_delta_epigenetic_feature_average_signal_PSI <- append(list_table_delta_epigenetic_feature_average_signal_PSI, list(delta_epi_table))
+    list_plots_delta_epigenetic_features_average_signal_0H_1H <- append(list_plots_delta_epigenetic_features_average_signal_0H_1H, list(delta_epi_plot_0H_1H))
+    list_plots_delta_epigenetic_features_average_signal_0H_6H <- append(list_plots_delta_epigenetic_features_average_signal_0H_6H, list(delta_epi_plot_0H_6H))
+  }
+}
+
+list_table_delta_epigenetic_feature_average_signal_PSI[[1]]
+  
 #add the information of gene name
 #import gene name
 M82_rMATs_anno_all_gene <-
@@ -425,20 +607,35 @@ produce_table_delta_PSI_epimark_peak_height <-
 }  
 
 
-join_overlap_intersect(as_granges(list_table_delta_epigenetic_feature_PSI[[1]]), M82_rMATs_anno_all_gene_gr) %>%
-  filter(str_detect(gene_name, "MC")==FALSE) %>%
-  as_tibble() %>%
-  mutate(AS_type = str_remove(AS_type, "_PSI")) %>%
-  mutate(AS_type = str_remove(AS_type, "delta_")) %>%
-  mutate(epigenetic_feature_0H_1H = str_remove(epigenetic_feature_0H_1H, "_peak.*")) %>%
-  mutate(epigenetic_feature_0H_1H = str_remove(epigenetic_feature_0H_1H, "del.*_")) %>%
-  dplyr::select(seqnames, start, end, width, strand, gene_name, AS_type, epigenetic_feature = epigenetic_feature_0H_1H, Incdf, delta_peak_height_0H_1H, delta_peak_height_0H_6H,peak_height_0H, peak_height_1H, peak_height_6H) 
-
 combined_table_delta_PSI_epimark_peak_height <- 
   map(list_table_delta_epigenetic_feature_PSI, produce_table_delta_PSI_epimark_peak_height) %>%
   bind_rows()
 
 write_csv(combined_table_delta_PSI_epimark_peak_height, "./analysis/AS_RI_SE_epimark_coenrichment_analysis/DAS_delta_PSI_epigenetic_feature_result/combined_table_delta_PSI_epimark_peak_height.csv", col_names = TRUE)
+
+produce_table_delta_PSI_epimark_average_signal <- 
+  function(data){
+    join_overlap_intersect(as_granges(data), M82_rMATs_anno_all_gene_gr) %>%
+      filter(str_detect(gene_name, "MC")==FALSE) %>%
+      as_tibble() %>%
+      mutate(AS_type = str_remove(AS_type, "_PSI")) %>%
+      mutate(AS_type = str_remove(AS_type, "delta_")) %>%
+      mutate(epigenetic_feature_0H_1H = str_remove(epigenetic_feature_0H_1H, "_all_re.*")) %>%
+      mutate(epigenetic_feature_0H_1H = str_remove(epigenetic_feature_0H_1H, "del.*_")) %>%
+      dplyr::select(seqnames, start, end, width, strand, gene_name, AS_type, epigenetic_feature = epigenetic_feature_0H_1H, Incdf, delta_average_signal_0H_1H, delta_average_signal_0H_6H,average_signal_0H, average_signal_1H, average_signal_6H) 
+    
+  }  
+
+list_table_delta_epigenetic_feature_average_signal_PSI[[1]] %>%
+  View()
+
+combined_table_delta_PSI_epimark_average_signal <- 
+  map(list_table_delta_epigenetic_feature_average_signal_PSI, produce_table_delta_PSI_epimark_average_signal) %>%
+  bind_rows()
+
+write_csv(combined_table_delta_PSI_epimark_average_signal, "./analysis/AS_RI_SE_epimark_coenrichment_analysis/DAS_delta_PSI_epigenetic_feature_result/combined_table_delta_PSI_epimark_average_signal.csv", col_names = TRUE)
+
+
 
 write_the_output_delta_PSI_epimark_table <- 
 function(data){
@@ -447,6 +644,8 @@ function(data){
 }
 
 walk(list_table_delta_epigenetic_feature_PSI, write_the_output_delta_PSI_epimark_table)
+
+walk(list_table_delta_epigenetic_feature_average_signal_PSI, write_the_output_delta_PSI_epimark_table)
 
 write_the_output_delta_PSI_epimark_plot <- 
   function(data, data2, data3){
@@ -459,7 +658,10 @@ write_the_output_delta_PSI_epimark_plot <-
 
 pwalk(list(list_table_delta_epigenetic_feature_PSI, list_plots_delta_epigenetic_features_0H_1H, list_plots_delta_epigenetic_features_0H_6H), write_the_output_delta_PSI_epimark_plot)
 
-list_table_delta_epigenetic_feature_PSI[[1]]$AS_type
+pwalk(list(list_table_delta_epigenetic_feature_average_signal_PSI, list_plots_delta_epigenetic_features_average_signal_0H_1H, list_plots_delta_epigenetic_features_average_signal_0H_6H), write_the_output_delta_PSI_epimark_plot)
+
+
+list_table_delta_epigenetic_feature_average_signal_PSI[[1]]$epigenetic_feature_0H_1H
 
 build_model <-
   function(data){
