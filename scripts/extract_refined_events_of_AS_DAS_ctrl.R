@@ -157,7 +157,6 @@ M82_rMATs_anno_all_intron <-
 #And this difference leads to different profiles of epigenetic features
 M82_all_gene_size <-
   read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_gene.bed", delim = "\t", col_names = c("chr", "str", "end", "strand", "feature", "source", "gene_name")) %>%
-  mutate(gene_size = end - str) %>%
   mutate(gene_name = str_replace(gene_name, "(.*\\..*)\\..*", "\\1")) %>%
   filter(source == "Liftoff") %>%
   dplyr::select(seqnames = chr, start = str, end, type = feature, source, gene_name, strand) %>%
@@ -327,6 +326,8 @@ RI_ctrl_AS_DAS_boxplot_bed6_output_raw <-
                             if_else(group_type == "stable_PSI", "RI_all_stable_PSI_genes", "RI_DAS_genes_H16_aft_H0"))) %>%
   dplyr::select(seqnames, start, end, gene_name, mean_0H, strand, group_type, RI_group, quantile_group_0H, mean_1H, mean_6H)
 
+
+write_delim(RI_ctrl_AS_DAS_boxplot_bed6_output_raw, "./data/M82_annotation_data/RI_ctrl_AS_DAS_gene_expression_level_0H_bed6_output.bed", delim = "\t", col_names = TRUE)
 
 #check how many genes do we have for each quantile of 3 RI groups, and the statistics of expression levels for each quantile of 3 AS groups
 RI_ctrl_AS_DAS_boxplot_bed6_output_raw %>%
