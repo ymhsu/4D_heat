@@ -13,7 +13,7 @@ produce_AS_HS0_PSI <- function(a){
   #import raw data of all .MATS.JC.txt files
   #variable "a" is different types of AS
   data_raw <- read_delim(str_c("./data/AS_events_HS0/", a[1], ".MATS.JC.txt"), col_names = col_names_uni, skip = 1) %>%
-    select(chr, strand, pos_1, pos_2, pos_3, pos_4, pos_5, pos_6, IncLevel1) %>%
+    dplyr::select(chr, strand, pos_1, pos_2, pos_3, pos_4, pos_5, pos_6, IncLevel1) %>%
     filter(str_detect(IncLevel1, "NA")==FALSE) %>%
     mutate(AS_type = a[1])
   
@@ -27,7 +27,7 @@ produce_AS_HS0_PSI <- function(a){
       IncLevel_r2 = as.double(IncLevel1_m[,2])
     ) %>%
     mutate(PSI = (IncLevel_r1 + IncLevel_r2)/2) %>%
-    select(-IncLevel_r1, -IncLevel_r2)
+    dplyr::select(-IncLevel_r1, -IncLevel_r2)
 }
 
 #assign the variable for 4 types of AS
@@ -69,7 +69,7 @@ AS_PSI_raw %>%
                                       if_else(PSI > 0.6 & PSI <= 0.8, "PSI_60_80", 
                                               if_else(PSI > 0.8 & PSI <= 0.95, "PSI_80_95", "PSI_95"))))))) %>%
   mutate(trt = "HS0") %>%
-  select(chr, str, end, trt, AS_type, PI) %>%
+  dplyr::select(chr, str, end, trt, AS_type, PI) %>%
   distinct() %>%
   split(.$AS_type) %>%
   map(. %>% split(.$PI))

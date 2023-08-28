@@ -1,5 +1,3 @@
-Sys.getlocale()
-Sys.setenv(LANG = "en_US.UTF-8")
 Packages <- c("plyranges", "tidyverse", "doParallel", "foreach", "nullranges", "caTools", "ggpubr", "fs")
 lapply(Packages, library, character.only = TRUE)
 
@@ -506,6 +504,10 @@ system.time(
 nrow(as_tibble(gr_RI_all[[1]]$upstream_feature_gr))
 )
 
+length(gr_RI_all)
+gr_RI_all[[1]]
+produce_coenrichment_index(gr_RI_all, 1, 2, c(2, 7))
+
 nrow(gr_RI_all[[1]]$upstream_feature_gr)
 
 system.time(
@@ -575,6 +577,7 @@ write_delim(coenrichment_all_comb_AS_all_PSI, "./analysis/AS_RI_SE_epimark_coenr
 coenrichment_all_comb_RI_PSI_separated <- tibble()
 coenrichment_all_comb_SE_PSI_separated <- tibble()
 
+location_gr <- c("upstream_feature_gr", "feature_gr", "downstream_feature_gr")
 
 for (i in seq_along(PSI_type)) {
   for (j in seq_along(gr_RI_separate_PSI[[1]])) {
@@ -650,6 +653,25 @@ gr_bootstrap_f <-
       as_tibble()
   }
 
+#subsample 50% of data
+gr_bootstrap_half_f <- 
+  function(data){
+    #transfer granges data into tibble
+    all_data <- 
+      data %>%
+      mutate(label = c(1:plyranges::n())) %>%
+      as_tibble()
+    
+    #randomly sample 10% of data
+    all_data_granges <-
+      all_data[sample(c(1:nrow(all_data)), round(nrow(all_data)/2)),] %>%
+      as_granges() %>%
+      sort()
+    
+    all_data_granges %>%
+      as_tibble()
+  }
+
 ##here I am going to create the loop for creating bootstrap samples for combined PSI, separate PSI, and control for RI and SE
 #create the function for extracting features with AS from separate PSI lists
 
@@ -718,108 +740,197 @@ foreach(i=seq_along(AS_type_bootstrap), .packages = c("plyranges", "tidyverse"))
     
   }
 
+#perform bootstrap for subsampling 50% of data
+foreach(i=seq_along(AS_type_bootstrap), .packages = c("plyranges", "tidyverse")) %:%
+  foreach(j=seq_along(PSI_type_bootstrap), .packages = c("plyranges", "tidyverse")) %:%
+  foreach(k=1:1000, .packages = c("plyranges", "tidyverse")) %dopar% {
+    bt_sample <- map(AS_bootstrap_rawdata_list[[i]][[j]], gr_bootstrap_half_f)
+    
+    bt_sample_path <- str_c("./data/AS_HS0_bootstrap_samples/", AS_type_bootstrap[[i]], "_", PSI_type_bootstrap[[j]], "_", names(bt_sample), "_bootstrap_half_", k)
+    
+    pwalk(list(bt_sample, bt_sample_path), write_delim, delim = "\t", col_names = TRUE)
+    
+  }
+
+
+bt_sample <- map(AS_bootstrap_rawdata_list[[1]][[4]], gr_bootstrap_half_f)
+
+bt_sample_path <- str_c("./data/AS_HS0_bootstrap_samples/", AS_type_bootstrap[[1]], "_", PSI_type_bootstrap[[4]], "_", names(bt_sample), "_bootstrap_half_", 694)
+
+pwalk(list(bt_sample, bt_sample_path), write_delim, delim = "\t", col_names = TRUE)
+
+AS_bootstrap_rawdata_list[[1]][[1]]
+
+test <- list.files("./data/AS_HS0_bootstrap_samples/")
+
+length(test)
+test[[1]]
+?str_detect
+
+name_feature_gr <- c("upstream_feature_gr", "feature_gr", "downstream_feature_gr")
+
+check_nb_object_in_list <- function(i,j,k){
+  name_object <- str_c(AS_type_bootstrap[[i]], "_", PSI_type_bootstrap[[j]], "_", name_feature_gr[[k]], "_bootstrap_half_")
+  
+  print(length(test[which(str_detect(test, name_object))]))
+  print(name_object)
+  
+}
+
+check_nb_object_in_list(c(1,1,1))
+
+test_list <- list(c(1,1,1), c(1,1,2), c(1,1,3))
+
+pmap(test_list, check_nb_object_in_list)
+
+length(AS_type_bootstrap)*length(PSI_type_bootstrap)*length(name_feature_gr)
+
+for (i in seq_along(AS_type_bootstrap)) {
+  for (j in seq_along(PSI_type_bootstrap)) {
+    for (k in seq_along(name_feature_gr)) {
+      
+      
+      check_nb_object_in_list(i,j,k)
+    }
+    
+    
+  }
+}
+
+test_2 <- test[which(str_detect(test, "RI_PSI_40_60_downstream_feature_gr_bootstrap_half_"))]
+tibble(
+  num = as.double(str_remove(test_2, "RI_PSI_40_60_downstream_feature_gr_bootstrap_half_"))
+) %>%
+  View()
+
+list(1,2)
+length(AS_type_bootstrap)
+length(PSI_type_bootstrap)
+
+names(bt_sample)
+
 #read all bootstrap files for producing histograms with error bars and pvalue (comparing features with and without AS) 
-AS_HS0_bootstrap_bootstrap_list <- fs::dir_ls("./data/AS_HS0_bootstrap_samples/", glob = "*_bootstrap_*")
+#modify the function for bootstrap samples to calculate coenrichment index
+produce_coenrichment_index_bootstrap <-
+  function(data, c){
+    
+    produce_epimark_intersection_f <-  
+      function(b, data){
+        
+        data %>%
+          mutate(label_gr = c(1:plyranges::n())) %>%
+          mutate(n_overlaps = count_overlaps(., epi_feature_gr[[b]])) %>%
+          filter(n_overlaps != 0)
+      }
+    
+    feature_epimark_list <- lapply(c(c), produce_epimark_intersection_f, data)
+    
+    feature_epimark1_2_intersection <-
+      feature_epimark_list[[1]] %>%
+      mutate(n_overlaps = count_overlaps(., feature_epimark_list[[2]])) %>%
+      filter(n_overlaps != 0) %>%
+      as_tibble()
+    
+    coenrichment_index <-
+      nrow(feature_epimark1_2_intersection) / c(nrow(as_tibble(feature_epimark_list[[2]])) - nrow(feature_epimark1_2_intersection) + nrow(as_tibble(feature_epimark_list[[1]])))
+    
+    
+    tibble(
+      epimark_1 = names(epi_feature_gr)[c[1]],
+      epimark_2 = names(epi_feature_gr)[c[2]],
+      coenrichment_index = coenrichment_index
+    )
+    
+  }
 
+#transform the combination of two epigenetic features into a list
+
+list_combination_epimark <- list()
+
+for (i in seq_along(1:nrow(comb_pair_epimark))) {
+  vector_combination_two_epimark <- c(comb_pair_epimark[i,1], comb_pair_epimark[i,2])
+  
+  list_combination_epimark <- append(list_combination_epimark, list(vector_combination_two_epimark))
+}
+
+#the latest bootstrap sample is based on 50 percent of data
+AS_HS0_bootstrap_bootstrap_list <- fs::dir_ls("./data/AS_HS0_bootstrap_samples/", glob = "*_bootstrap_half_*")
+
+#focus on feature per se first
+AS_feature_path <- AS_HS0_bootstrap_bootstrap_list[grep("upstream|downstream", AS_HS0_bootstrap_bootstrap_list, invert = TRUE)]
+
+#divide the previous path into two parts for starting the work tonight (220523)
+RI_feature_path <- AS_feature_path[str_detect(AS_feature_path, "RI")]
+SE_feature_path <- AS_feature_path[str_detect(AS_feature_path, "SE")]
+
+#produce the name for following output
+name_RI_feature_bt_sample <- str_remove(RI_feature_path, "./data/AS_HS0_bootstrap_samples/")
+name_SE_feature_bt_sample <- str_remove(SE_feature_path, "./data/AS_HS0_bootstrap_samples/")
+
+tibble(path = AS_feature_path[str_detect(AS_feature_path, "RI")]) %>%
+  View()
+
+#delete ----
 location <- c("upstream_feature", "feature", "downstream_feature")
+#delte -----
 
 
-
-registerDoParallel(cores = 10)
+AS_HS0_bootstrap_bootstrap_list[[1]]
+SE_feature_path[[1]]
+registerDoParallel(cores = 8)
 getDoParWorkers()
 
-foreach(i = seq_along(AS_type_bootstrap),
-        .packages = c("plyranges", "tidyverse")) %:%
-  foreach(j = seq_along(PSI_type_bootstrap),
-          .packages = c("plyranges", "tidyverse")) %:%
-  foreach(k = seq_along(location),
-          .packages = c("plyranges", "tidyverse")) %:%
-  foreach(l = seq_along(comb_pair_epimark[, 1]),
-          .packages = c("plyranges", "tidyverse")) %:%
-  foreach(m = 1:1000,
-          .packages = c("plyranges", "tidyverse")) %dopar% {
-            path_bootstrap <-
-              str_c(
-                "./data/AS_HS0_bootstrap_samples/",
-                AS_type_bootstrap[[i]],
-                "_",
-                PSI_type_bootstrap[[j]],
-                "_",
-                location,
-                "_gr_bootstrap_",
-                m
-              )
+foreach(i = 1:length(SE_feature_path), 
+        .packages = c("plyranges", "tidyverse")) %dopar% {
+  
+  #read bootstrap sample
+  bootstrap_sample <- read_delim(SE_feature_path[[i]], delim = "\t", col_names = TRUE)
+  
+  #transform tibble into granges
+  bootstrap_sample <-
+    bootstrap_sample %>%
+    as_granges()
             
-            #read bootstrap sample
-            bootstrap_sample <-
-              map(path_bootstrap,
-                  read_delim,
-                  delim = "\t",
-                  col_names = TRUE)
-            
-            #transmform tibble into granges
-            bootstrap_sample <-
-              bootstrap_sample %>%
-              map(. %>% as_granges)
-            
-            #add another level of list for running the function of producing coenrichment index
-            bootstrap_sample <-
-              list(bootstrap_sample)
-            
-            #add the name of the first level
-            names(bootstrap_sample) <-
-              str_c(AS_type_bootstrap[[i]], "_", PSI_type_bootstrap[[j]])
-            
-            #add the name of the second level
-            names(bootstrap_sample[[1]]) <- location
-            
-            #produce the output file of coenrichment index
-            output <-
-              produce_coenrichment_index(bootstrap_sample, 1, k, c(comb_pair_epimark[l,])) %>%
-              mutate(bootstrap_label = m)
-            
-            path_output <- 
-              str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/bootstrap_coenrichment_result/", AS_type_bootstrap[[i]], "_", PSI_type_bootstrap[[j]], "_", location[[k]], "_epimark_", c(comb_pair_epimark[l,])[1], "_", c(comb_pair_epimark[l,])[2], "_bt_", m, "_coenrichment_index.txt")
-            
-            write_delim(output, path_output, delim = "\t", col_names = TRUE)
-            
-          }
+  #produce the output file of coenrichment index
+  output <-
+    map2(replicate(length(list_combination_epimark), bootstrap_sample), list_combination_epimark, produce_coenrichment_index_bootstrap) %>%
+    bind_rows() %>%
+    mutate(bt_sample = name_SE_feature_bt_sample[[i]])
+  
+  
+  path_output <- 
+    str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/bootstrap_coenrichment_result_half/", name_SE_feature_bt_sample[[i]], "_coenrichment_index.txt")
+  
+  write_delim(output, path_output, delim = "\t", col_names = TRUE)
+  }
 
 
-registerDoParallel(cores = 5)
-getDoParWorkers()
 
-seq_along(AS_type_bootstrap)
-seq_along(PSI_type_bootstrap)
-seq_along(location)
-coenrichment_index_1000_bootstrap_list <- 
-foreach(i = 1,
-        .packages = c("plyranges", "tidyverse")) %:%
-  foreach(j = 1,
-          .packages = c("plyranges", "tidyverse")) %:%
-  foreach(k = 1,
-          .packages = c("plyranges", "tidyverse")) %:%
-  foreach(l = seq_along(comb_pair_epimark[, 1]),
-          .packages = c("plyranges", "tidyverse")) %:%
-  foreach(m = 1:5,
-          .packages = c("plyranges", "tidyverse")) %dopar% {
-            
-            path_output <- 
-              str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/bootstrap_coenrichment_result/", AS_type_bootstrap[[i]], "_", PSI_type_bootstrap[[j]], "_", location[[k]], "_epimark_", c(comb_pair_epimark[l,])[1], "_", c(comb_pair_epimark[l,])[2], "_bt_", m, "_coenrichment_index.txt")
-            
-            read_delim(path_output, delim = "\t", col_names = TRUE)
-          }
-
-
-#import the table with all coenrichment index including 1000 bootstraping
+#import the table with all coenrichment index including 1000 bootstraping for producing se and p-value
+#based on 10% out of all for the bootstrap process (trick: don't use map to upload all separated coenrichment-index tables, use cat to merge them together under linux then import the intgrated file )
 coenrichment_index_1000_bootstrap_total <-
   read_delim("./analysis/AS_RI_SE_epimark_coenrichment_analysis/coenrichment_index_1000_bootstrap_total.txt", delim = "\t", col_names = c("target", "location", "epimark_1", "epimark_2", "coenrichment_index", "bootstrap_label"))
 
-coenrichment_index_1000_bootstrap_total %>%
-  select(target) %>%
-  distinct()
+##based on 50% out of all for the bootstrap process 
+path_AS_coenrichment_index_feature_1000_bootstrap_total <- str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/bootstrap_coenrichment_result_half/", c("RI", "SE"), "_AS_all_categories_total.txt")
+
+AS_coenrichment_index_feature_1000_bootstrap_total <- map(path_AS_coenrichment_index_feature_1000_bootstrap_total, read_delim, delim = "\t", col_names = c("epimark_1", "epimark_2", "coenrichment_index", "bt_sample"))
+
+#produce data for making histograms, after this, jump into line after 1000 to make plots
+AS_coenrichment_index_1000_bootstrap_half_total_hist_plots_raw <-
+  AS_coenrichment_index_feature_1000_bootstrap_total %>%
+  map(. %>% mutate(PSI_group = str_remove(bt_sample, "_feature.*"))) %>%
+  map(. %>% mutate(PSI_group = str_remove(PSI_group, str_sub(PSI_group, 1, 3)))) %>%
+  map(. %>% mutate(AS_region = str_c(str_sub(bt_sample, 1, 2), "_feature"), pair_mark = str_c(epimark_1, "_", epimark_2))) %>%
+  map(. %>% group_by(AS_region, pair_mark, PSI_group)) %>%
+  map(. %>% summarise(sd_coenrichment_index = sd(coenrichment_index), bt_coenrichment_index_mean = mean(coenrichment_index))) %>%
+  map(. %>% mutate(PSI_group = factor(PSI_group, levels = c("PSI_all", "ctrl", str_c(
+    "PSI_",
+    c("5", "5_20", "20_40", "40_60", "60_80", "80_95", "95")
+  )))))
 
 #import the table with coenrichment index of separate PSI
+#this part is based on 10% out of n bootstrap to have a quick answer for producing p-value (comparing each type of PSI and control) 
 coenrichment_index_all_separate_PSI_ctrl <- 
 read_delim("./analysis/AS_RI_SE_epimark_coenrichment_analysis/coenrichment_index_all_separate_PSI_ctrl.txt", delim = "\t", col_names = TRUE)
 
@@ -928,14 +1039,16 @@ pwalk(list(path_SE_plot_coenrichment_trend_separated_PSI, SE_plot_coenrichment_t
 
 
 #produce histograms of coenrichment of separated PSI with error bars
-coenrichment_index_all_separate_PSI_ctrl <- 
-read_delim("./analysis/AS_RI_SE_epimark_coenrichment_analysis/coenrichment_index_all_separate_PSI_ctrl.txt", delim = "\t", col_names = TRUE) %>%
+#produce data used plots depending on 10%-out-of-all bootstrap 
+coenrichment_index_all_separate_PSI_ctrl <-
+  read_delim("./analysis/AS_RI_SE_epimark_coenrichment_analysis/coenrichment_index_all_separate_PSI_ctrl.txt", delim = "\t", col_names = TRUE) %>%
   gather(key = PSI_group, value = coenrichment_index, c(5:13)) %>%
   mutate(PSI_group = if_else(PSI_group == "all", "PSI_all", PSI_group)) %>%
   mutate(target = str_c(target, "_", PSI_group), location = str_remove(location, "_gr"))
 
+
 coenrichment_index_1000_bootstrap_total_hist_plots_raw <- 
-coenrichment_index_1000_bootstrap_total %>%
+  coenrichment_index_1000_bootstrap_total %>%
   group_by(target, location, epimark_1, epimark_2) %>%
   summarise(sd_coenrichment_index = sd(coenrichment_index), bt_coenrichment_index_mean = mean(coenrichment_index)) %>%
   left_join(coenrichment_index_all_separate_PSI_ctrl) %>%
@@ -946,17 +1059,10 @@ coenrichment_index_1000_bootstrap_total %>%
   )))) %>%
   mutate(AS_region = str_c(AS_group, "_", location), pair_mark = str_c(epimark_1, "_", epimark_2))
 
-coenrichment_index_1000_bootstrap_total_hist_plots_raw %>%
-  View()
 
-coenrichment_index_1000_bootstrap_total_hist_plots_key <- 
-coenrichment_index_1000_bootstrap_total_hist_plots_raw %>%
-  ungroup() %>%
-  select(AS_region, pair_mark) %>%
-  distinct()
-
-produce_coenrichment_index_hist_plots <- function(a, b){
-coenrichment_index_1000_bootstrap_total_hist_plots_raw %>% 
+#create the function for making histograms with error bars 
+produce_coenrichment_index_hist_plots <- function(data, a, b){
+ data %>% 
   filter(AS_region == a[1] & pair_mark == b[1]) %>%
   ggplot(aes(PSI_group, bt_coenrichment_index_mean, fill=PSI_group)) +
   geom_bar(stat="identity") +
@@ -981,21 +1087,43 @@ coenrichment_index_1000_bootstrap_total_hist_plots_raw %>%
         axis.text.x = element_text(colour = "black", size = 20, face = "bold", angle = 60, vjust = 0.5))
 }
 
+#test scripts
 coenrichment_index_1000_bootstrap_total_hist_plots_raw %>% 
   filter(AS_region == "SE_feature" & pair_mark == "H3K4me1_H3K4me3") %>%
   View()
 
+RI_coenrichment_index_1000_bootstrap_half_total_hist_plots_raw %>% 
+  filter(AS_region == "RI_feature" & pair_mark == "H3K4me1_H3K4me3")
+
 coenrichment_index_1000_bootstrap_total_hist_plots_key %>%
   View()
 
-produce_coenrichment_index_hist_plots(coenrichment_index_1000_bootstrap_total_hist_plots_key$AS_region[[91]],
+produce_coenrichment_index_hist_plots(coenrichment_index_1000_bootstrap_total_hist_plots_raw,
+                                      coenrichment_index_1000_bootstrap_total_hist_plots_key$AS_region[[91]],
                                       coenrichment_index_1000_bootstrap_total_hist_plots_key$pair_mark[[91]])
 
-coenrichment_index_hist_plots_list <- 
-map2(coenrichment_index_1000_bootstrap_total_hist_plots_key$AS_region, 
+
+pmap(coenrichment_index_1000_bootstrap_total_hist_plots_key$AS_region, 
      coenrichment_index_1000_bootstrap_total_hist_plots_key$pair_mark,
      produce_coenrichment_index_hist_plots)
 
+length(unique(coenrichment_index_1000_bootstrap_total_hist_plots_raw$PSI_group))
+
+##produce plots
+#10% out of all bootstrap
+coenrichment_index_1000_bootstrap_total_hist_plots_key <- 
+  coenrichment_index_1000_bootstrap_total_hist_plots_raw %>%
+  ungroup() %>%
+  select(AS_region, pair_mark) %>%
+  distinct()
+
+coenrichment_index_hist_plots_list <- 
+  pmap(list(replicate(nrow(coenrichment_index_1000_bootstrap_total_hist_plots_raw)/length(unique(coenrichment_index_1000_bootstrap_total_hist_plots_raw$PSI_group)),
+                 coenrichment_index_1000_bootstrap_total_hist_plots_raw),
+     coenrichment_index_1000_bootstrap_total_hist_plots_key$AS_region, 
+     coenrichment_index_1000_bootstrap_total_hist_plots_key$pair_mark),
+     produce_coenrichment_index_hist_plots)
+RI_coenrichment_index_1000_bootstrap_half_total_hist_plots_raw$AS_region[[1]]
 
 
 path_coenrichment_index_plots_hist_separated_PSI <- 
@@ -1003,6 +1131,37 @@ str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/coenrichment_analysis_c
 
 pwalk(list(path_coenrichment_index_plots_hist_separated_PSI, coenrichment_index_hist_plots_list), ggsave,
       width = 400, height = 240, units = c("mm"), dpi = 320)
+
+#50% out of all bootstrap (only RI at this moment)
+#produce vectors as the input of the function creating plots
+
+for (i in seq_along(AS_coenrichment_index_1000_bootstrap_half_total_hist_plots_raw)) {
+  
+  AS_feature_plots_AS_region_vector <- unique(AS_coenrichment_index_1000_bootstrap_half_total_hist_plots_raw[[i]]$AS_region)
+  
+  print(AS_feature_plots_AS_region_vector)
+  
+  AS_feature_plots_pair_mark_vector <- unique(AS_coenrichment_index_1000_bootstrap_half_total_hist_plots_raw[[i]]$pair_mark)
+  
+  coenrichment_index_half_hist_plots_list <- 
+    pmap(list(replicate(nrow(AS_coenrichment_index_1000_bootstrap_half_total_hist_plots_raw[[i]])/length(unique(AS_coenrichment_index_1000_bootstrap_half_total_hist_plots_raw[[i]]$PSI_group)),
+                        list(AS_coenrichment_index_1000_bootstrap_half_total_hist_plots_raw[[i]])),
+              rep(AS_feature_plots_AS_region_vector, nrow(AS_coenrichment_index_1000_bootstrap_half_total_hist_plots_raw[[i]])/length(unique(AS_coenrichment_index_1000_bootstrap_half_total_hist_plots_raw[[i]]$PSI_group))), 
+              AS_feature_plots_pair_mark_vector),
+         produce_coenrichment_index_hist_plots)
+  
+  path_AS_coenrichment_index_half_plots_hist_separated_PSI <- 
+    str_c("./analysis/AS_RI_SE_epimark_coenrichment_analysis/coenrichment_analysis_comb_epimark_histgram_separated_PSI/", AS_feature_plots_AS_region_vector, "_", AS_feature_plots_pair_mark_vector, "_coenrichment_index_half_separated_PSI.jpeg")
+  
+  pwalk(list(path_AS_coenrichment_index_half_plots_hist_separated_PSI, coenrichment_index_half_hist_plots_list), ggsave,
+        width = 400, height = 240, units = c("mm"), dpi = 320)
+  
+  
+  
+}
+
+
+
 
 coenrichment_all_comb_RI
 length(gr_ctrl_final_l)

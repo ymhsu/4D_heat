@@ -1,15 +1,13 @@
-library(tidyverse)
+#This work is to compare the difference between HSFA1 mutants and WT
 
-list.dirs("./data/rMATS_HSFA1A_out/WT_HS1/tmp/",recursive = F, full.names = T)
+library(tidyverse)
 
 comp <- c("WT_HS0_vs_WT_HS1", "hsfa1a_line2_HS0_vs_hsfa1a_line2_HS1", "hsfa1a_line1_HS0_vs_hsfa1a_line1_HS1")
 
 input_path_data_HSFA1A <-
   str_c("./data/rMATS_HSFA1A_out/", rep(comp, each = 4), "/", rep(c("RI", "SE", "A5SS", "A3SS"), length(comp)), ".MATS.JC.txt")
 
-str_c("a", "b", "c", sep = "_")
-
-
+#create the function to import data
 function_input_HSFA1A_data <- function(a){
   AS_type <- 
     str_remove(str_remove(a[1], "./data/rMATS_HSFA1A_out/.*/"), ".MATS.JC.txt")
@@ -64,6 +62,7 @@ write_delim(input_DAS_HSFA1A_combined_stringent, "./data/rMATS_HSFA1A_out/input_
             delim = "\t", col_names = TRUE)
 
 #create TPM of all genes in different reps of HSFA1 experiments
+#for grouping three lines with the similar gene expression levels
 
 #import annotation data of all genes
 M82_rMATs_anno_all_gene <- 
@@ -106,6 +105,7 @@ input_HSFA1A_read_count_gene_combined <-
   pmap(list(path_read_count_gene, name_HSFA1A_trt_rep), function_input_HSFA1A_read_count_gene) %>%
   reduce(., full_join)
 
+#calculate TPM of different rep of lines among treatments
 input_HSFA1A_read_count_gene_combined_TPM <-
   input_HSFA1A_read_count_gene_combined %>%
   filter(str_detect(gene_ID, "gene:")) %>%
@@ -132,6 +132,7 @@ input_HSFA1A_read_count_gene_combined_TPM <-
 write_delim(input_HSFA1A_read_count_gene_combined_TPM, "./data/rMATS_HSFA1A_out/input_HSFA1A_read_count_gene_combined_TPM.txt",
             delim = "\t", col_names = TRUE)
 
+#calculate mean TPM of different rep of lines among treatments
 input_HSFA1A_read_count_gene_combined_mean_TPM <-
   input_HSFA1A_read_count_gene_combined_TPM %>%
   pivot_longer(names_to = "trt_rep", values_to = "TPM", cols = c(2:19)) %>%

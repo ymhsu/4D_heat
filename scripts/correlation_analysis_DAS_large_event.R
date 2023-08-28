@@ -1,5 +1,3 @@
-Sys.getlocale()
-Sys.setenv(LANG = "en_US.UTF-8")
 Packages <- c("plyranges", "tidyverse", "doParallel", "foreach", "nullranges", "caTools", "ggpubr", "fs", "HelloRanges")
 lapply(Packages, library, character.only = TRUE)
 

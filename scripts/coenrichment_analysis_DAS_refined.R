@@ -1,5 +1,3 @@
-Sys.getlocale()
-Sys.setenv(LANG = "en_US.UTF-8")
 Packages <- c("plyranges", "tidyverse", "doParallel", "foreach", "nullranges", "caTools", "ggpubr", "fs", "HelloRanges")
 lapply(Packages, library, character.only = TRUE)
 
@@ -77,6 +75,9 @@ DAS_geneID_strand <-
   map(DAS_geneID, search_for_strand_DAS_gene) %>%
   bind_rows()
 
+DAS_geneID_strand %>%
+  View()
+
 #extract chromosome info for all DAS gene
 DAS_geneID_chr <- 
   All_DAS_events_all_comparisons_refined %>%
@@ -110,6 +111,8 @@ All_DAS_events_all_comparisons_refined %>%
 
 write_delim(All_DAS_events_all_comparisons_refined_raw, "./data/temp/All_DAS_events_all_comparisons_refined_raw", delim = "\t", col_names = TRUE)
 
+
+
 #extract inclusion levels of DAS
 IncLevel_two_trts_rep_table <- 
   tibble(
@@ -136,7 +139,36 @@ All_DAS_events_all_comparisons_refined_raw %>%
 write_delim(All_DAS_events_all_comparisons_refined_for_granges, "./data/temp/All_DAS_events_all_comparisons_refined_for_granges", delim = "\t", col_names = TRUE)
   
 All_DAS_events_all_comparisons_refined_for_granges %>%
-  as_granges()
+  View()
+
+#here, I would like to extract use DAS genes to extract stable PSI and ctrl genes (no AS) from annotation data) 
+#import AS found at HS0 and remove DAS from them
+all_AS_HS0_f <-
+  read_delim("./data/AS_events_HS0/AS_HS0_PSI_segment/all_AS_HS0_f.bed", delim = "\t", col_names = c("seqnames", "start", "end", "trt", "AS_type", "PSI_type"))
+
+#make all Liftoff genes as gr file
+M82_rMATs_anno_all_gene_gr <- 
+M82_rMATs_anno_all_gene %>%
+  dplyr::select(seqnames = chr, start = str, end, strand, feature, source, gene_name) %>%
+  filter(source == "Liftoff") %>%
+  mutate(gene_name = str_replace(gene_name, "(.*\\..*)\\..*", "\\1")) %>%
+  as_granges
+
+all_AS_HS0_gene_name <- 
+  join_overlap_intersect(M82_rMATs_anno_all_gene_gr, as_granges(all_AS_HS0_f)) %>%
+  as_tibble() %>%
+  dplyr::select(gene_name, AS_type) %>%
+  distinct()
+
+test <-
+  join_overlap_intersect(M82_rMATs_anno_all_gene_gr, as_granges(All_DAS_events_all_comparisons_refined_for_granges)) %>%
+  as_tibble() %>%
+  distinct()
+
+all_AS_HS0_gene_name %>%
+  dplyr::select(gene_name) %>%
+  distinct() %>%
+  left_join(test)
 
 #-----delete this part-----#
 #import bootstrap samples under HS0 condition, and remove DAS genes from these samples
@@ -228,15 +260,18 @@ M82_rMATs_anno_all_exon <-
 M82_rMATs_anno_all_exon %>%
   summarise(median_exon = median(end-start))
 
-
 #import all introns
 M82_rMATs_anno_all_intron <-
-  read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_intron.bed", col_names = c("seqnames", "start", "end", "strand", "feature", "source", "gene_name"))
+  read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_intron_exon_ordered_corrected.bed", delim = "\t") %>%
+  filter(feature == "intron") %>%
+  dplyr::select(-genetic_feature_label)
 
 #calculate the medium of intron sizes
 M82_rMATs_anno_all_intron %>%
   summarise(median_intron = median(end-start))
 
+M82_rMATs_anno_all_exon %>%
+  summarise(median_exon = median(end-start))
 
 #combine the annotation data of intron and exon
 M82_rMATs_anno_all_intron_exon_ordered <- 
@@ -683,14 +718,41 @@ list_SE_AS_DAS_size_selection <- produce_list_AS_DAS_size_selection("SE")
 list_AS_DAS_size_selection <- 
   map(AS_type_focused, produce_list_AS_DAS_size_selection)
 
+#add strand information for all AS/DAS groups for precisely making deeptools figures 
+M82_rMATs_anno_all_gene_gr <-
+  read_delim("./data/M82_annotation_data/M82_rMATs_anno_all_gene.bed", col_names = c("seqnames", "start", "end", "strand", "feature", "source", "gene_name")) %>%
+  filter(source != "REGARN") %>%
+  mutate(strand_2 = strand) %>%
+  as_granges()
+
+
+join_overlap_intersect(as_granges(list_AS_DAS_size_selection[[1]][[1]][[1]]), M82_rMATs_anno_all_gene_gr) %>%
+  as_tibble() %>%
+  mutate(score = ".") %>%
+  dplyr::select(seqnames, start, end, name, score, strand = strand_2)
+
+  
+ 
 for (i in seq_along(list_AS_DAS_size_selection)) {
   for (j in seq_along(list_AS_DAS_size_selection[[1]])) {
     for (k in seq_along(list_AS_DAS_size_selection[[1]][[1]])) {
       
-      path_output <- str_c("./data/AS_DAS_refined_grouped_by_DAS_size/", AS_type_focused[[i]], "_", names(list_AS_DAS_size_selection[[i]])[[j]], "_feature_size_group_", 
-            names(list_AS_DAS_size_selection[[i]][[j]])[[k]], ".bed")
-      print(path_output)
-      write_delim(list_AS_DAS_size_selection[[i]][[j]][[k]], path_output, delim = "\t", col_names = TRUE)
+      #path_output <- str_c("./data/AS_DAS_refined_grouped_by_DAS_size/", AS_type_focused[[i]], "_", names(list_AS_DAS_size_selection[[i]])[[j]], "_feature_size_group_", 
+            #names(list_AS_DAS_size_selection[[i]][[j]])[[k]], ".bed")
+      #print(path_output)
+      #write_delim(list_AS_DAS_size_selection[[i]][[j]][[k]], path_output, delim = "\t", col_names = TRUE)
+      
+      #produce bed6 files
+      output_bed6 <- 
+        join_overlap_intersect(as_granges(list_AS_DAS_size_selection[[i]][[j]][[k]]), M82_rMATs_anno_all_gene_gr) %>%
+        as_tibble() %>%
+        mutate(score = ".") %>%
+        dplyr::select(seqnames, start, end, name, score, strand = strand_2)
+      
+      path_output_bed6 <- str_c("./data/AS_DAS_refined_grouped_by_DAS_size/", AS_type_focused[[i]], "_", names(list_AS_DAS_size_selection[[i]])[[j]], "_feature_size_group_", 
+                           names(list_AS_DAS_size_selection[[i]][[j]])[[k]], "_bed6.bed")
+      
+      write_delim(output_bed6, path_output_bed6, delim = "\t", col_names = FALSE)
       
     }
   }
@@ -746,21 +808,31 @@ DAS_splicing_sites_merged_H16_aft_H0_granges <-
 
 
 #combine AS and DAS with the information of splicing sites together
+#and add strand information to produce bed6 format files for deeptools
 list_AS_DAS_splicing_site_large_events <- 
   append(AS_splicing_sites_HS0_PSI_all_DAS_removed_granges, DAS_splicing_sites_merged_H16_aft_H0_granges) %>%
   map(. %>% as_tibble())
 
+list_AS_DAS_splicing_site_large_events_bed6 <-
+  list_AS_DAS_splicing_site_large_events %>%
+  map(. %>% as_granges) %>%
+  map(. %>% join_overlap_intersect(., M82_rMATs_anno_all_gene_gr)) %>%
+  map(. %>% as_tibble()) %>%
+  map(. %>% mutate(score = ".")) %>%
+  map(. %>% dplyr::select(seqnames, start, end, name = gene_name, score, strand = strand_2))
+
+
 #produce the output of AS splicing sites
-AS_splicing_site_path_output <- str_c("./data/AS_DAS_refined_grouped_by_DAS_size/", rep(AS_type_focused, 2), "_splicing_sites", rep(c("_PSI_all_feature_size_group_large", "_merged_H16_aft_H0_feature_size_group_large"), each = 2), ".bed")
+AS_splicing_site_path_output <- str_c("./data/AS_DAS_refined_grouped_by_DAS_size/", rep(AS_type_focused, 2), "_splicing_sites", rep(c("_PSI_all_feature_size_group_large", "_merged_H16_aft_H0_feature_size_group_large"), each = 2), "_bed6.bed")
 
 
-
-pwalk(list(list_AS_DAS_splicing_site_large_events, AS_splicing_site_path_output), write_delim,
+pwalk(list(list_AS_DAS_splicing_site_large_events_bed6, AS_splicing_site_path_output), write_delim,
       delim = "\t", col_names = FALSE)
 
 
 #AS_DAS_refined_grouped_by_DAS_size
 
+#
 #produce bootstrap samples for the following analysis (sample size = 0.5 * the size of initial data)
 
 #create the function for calculating single-mark enrichment index for each AS cases (PSI, ctrl and other DAS)
