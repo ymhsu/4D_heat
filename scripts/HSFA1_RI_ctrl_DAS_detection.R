@@ -35,6 +35,28 @@ input_DAS_HSFA1A_combined_raw <-
   map(input_path_data_HSFA1A, function_input_HSFA1A_data) %>%
   bind_rows()
 
+#make a table of DAS events using only padj and show their presence and absence among three lines
+DAS_HSFA1A_presence_and_absence_FDR001 <-
+  input_DAS_HSFA1A_combined_raw %>%
+  filter(FDR < 0.01) %>%
+  mutate(having_DAS = "yes") %>%
+  select(ID_final, GeneID, chr, pos_1, pos_2, pos_3, pos_4, pos_5, pos_6, strand, comp, having_DAS) %>%
+  pivot_wider(names_from = comp, values_from = having_DAS) %>%
+  replace_na(list(WT_HS0_vs_WT_HS1 = "no", hsfa1a_line2_HS0_vs_hsfa1a_line2_HS1 = "no",
+                  hsfa1a_line1_HS0_vs_hsfa1a_line1_HS1 = "no"))
+
+write_delim(DAS_HSFA1A_presence_and_absence_FDR001, "./data/rMATS_HSFA1A_out/DAS_HSFA1A_presence_and_absence_FDR001.txt",
+            delim = "\t", col_names = TRUE)
+
+#one is available to check presence and absence of AS events among three lines
+DAS_event_presence_and_absence_3_lines_statistics <-
+  DAS_HSFA1A_presence_and_absence_FDR001 %>%
+  group_by(WT_HS0_vs_WT_HS1, hsfa1a_line1_HS0_vs_hsfa1a_line1_HS1, hsfa1a_line2_HS0_vs_hsfa1a_line2_HS1) %>%
+  summarise(count = n())
+
+write_delim(DAS_event_presence_and_absence_3_lines_statistics, "./data/rMATS_HSFA1A_out/DAS_event_presence_and_absence_3_lines_statistics.txt",
+            delim = "\t", col_names = TRUE)
+
 ### stringent filtering
 min_junct=4  ## can be adjusted
 padj=0.01
@@ -60,6 +82,7 @@ input_DAS_HSFA1A_combined_stringent %>%
 
 write_delim(input_DAS_HSFA1A_combined_stringent, "./data/rMATS_HSFA1A_out/input_DAS_HSFA1A_combined_stringent_raw.txt",
             delim = "\t", col_names = TRUE)
+
 
 #create TPM of all genes in different reps of HSFA1 experiments
 #for grouping three lines with the similar gene expression levels
@@ -286,6 +309,8 @@ all_AS_HSFA1A_df_trt_separated_segments %>%
 
 
 all_HSFA1A_AS_DAS_combined_table_raw %>%
+  group_by(genotype, trt, AS_type) %>%
+  summarise(count = n()) %>%
   View()
 
 
